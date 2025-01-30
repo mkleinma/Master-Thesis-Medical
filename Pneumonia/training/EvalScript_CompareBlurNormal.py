@@ -1,0 +1,142 @@
+import os
+import pickle
+import torch
+import torch.nn as nn
+from torch.utils.data import Dataset, DataLoader
+from torchvision import transforms
+from sklearn.metrics import confusion_matrix, precision_score, recall_score, f1_score, roc_auc_score, accuracy_score
+import numpy as np
+import pandas as pd
+from torchvision.transforms import functional as TF
+from PIL import Image
+from libraries.bcosconv2d import NormedConv2d
+import pydicom 
+import random
+import matplotlib.pyplot as plt
+
+from libraries.bcosconv2d import NormedConv2d
+from pooling.blur_bcosconv2d import ModifiedBcosConv2d
+
+
+np.random.seed(0)
+random.seed(0)
+torch.manual_seed(0)
+
+# Paths
+csv_path = r"/home/mkleinma/rsna-pneumonia-detection-challenge/stage_2_train_labels.csv"
+image_folder = r"/home/mkleinma/rsna-pneumonia-detection-challenge/stage_2_train_images"
+splits_path = r"/home/mkleinma/training_splits/splits_balanced.pkl"
+model_path_blur = r"/home/mkleinma/trained_models/30_epochs_bcos_blur/seed_0/pneumonia_detection_model_bcos_trans_bestf1_1_20.pth" 
+model_path_normal = r"/home/mkleinma/trained_models/30_epochs_bcos_allLayers_224x224/pneumonia_detection_model_baseline_bestf1_1_11.pth"
+data = pd.read_csv(csv_path)
+with open(splits_path, 'rb') as f:
+    splits = pickle.load(f)
+
+class PneumoniaDataset(Dataset):
+    def __init__(self, dataframe, image_folder, transform=None):
+        self.data = dataframe
+        self.image_folder = image_folder
+        self.transform = transform
+
+    def __len__(self):
+        return len(self.data)
+
+    def __getitem__(self, idx):
+        row = self.data.iloc[idx]
+        image_path = os.path.join(self.image_folder, f"{row['patientId']}.dcm")
+        label = row['Target']
+        patient_id = row['patientId']
+        
+        dicom = pydicom.dcmread(image_path)
+        image = dicom.pixel_array
+        
+        image = Image.fromarray(image).convert("RGB")
+        tensor_image = TF.to_tensor(image)
+                
+        return tensor_image, torch.tensor(label, dtype=torch.long), patient_id
+    
+
+device = torch.device("cuda:4" if torch.cuda.is_available() else "cpu")
+
+model_normal = torch.hub.load('B-cos/B-cos-v2', 'resnet50', pretrained=True)
+model_normal.fc.linear = NormedConv2d(2048, 2, kernel_size=(1, 1), stride=(1, 1), bias=False)
+state_dict = torch.load(model_path_normal, map_location=device)
+model_normal.load_state_dict(state_dict)
+model_normal = model_normal.to(device)
+model_normal.eval()
+
+# Load model
+model_blur = torch.hub.load('B-cos/B-cos-v2', 'resnet50', pretrained=True)
+model_blur.conv1 = ModifiedBcosConv2d(6, 64, kernel_size=(7,7), stride=(2, 2), padding=(3, 3), b=2)
+
+model_blur.layer2[0].conv2 = ModifiedBcosConv2d(128, 128, kernel_size=(3, 3), stride=(2, 2), padding=(1, 1), b=2)
+model_blur.layer2[0].downsample[0] = ModifiedBcosConv2d(256, 512, kernel_size=(1, 1), stride=(2, 2), b=2)
+
+model_blur.layer3[0].conv2 = ModifiedBcosConv2d(256, 256, kernel_size=(3, 3), stride=(2, 2), padding=(1, 1), b=2)
+model_blur.layer3[0].downsample[0] = ModifiedBcosConv2d(512, 1024, kernel_size=(1, 1), stride=(2, 2), b=2)
+
+model_blur.layer4[0].conv2 = ModifiedBcosConv2d(512, 512, kernel_size=(3, 3), stride=(2, 2), padding=(1, 1), b=2)
+model_blur.layer4[0].downsample[0] = ModifiedBcosConv2d(1024, 2048, kernel_size=(1, 1), stride=(2, 2), b=2)
+    
+model_blur.fc.linear = NormedConv2d(2048, 2, kernel_size=(1, 1), stride=(1, 1), bias=False) 
+
+
+state_dict = torch.load(model_path_blur, map_location=device)
+model_blur.load_state_dict(state_dict)
+model_blur = model_blur.to(device)
+model_blur.eval()
+
+
+# Transformations
+transform = transforms.Compose([
+    transforms.Resize((224, 224)),
+    transforms.ToTensor(),
+    transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
+])
+
+data = pd.read_csv(csv_path)
+first_split = splits[0]
+val_idx = first_split[1]  # Only use the validation indices from the 5th split
+val_data = data.iloc[val_idx]
+val_dataset = PneumoniaDataset(val_data, image_folder, transform=transform)
+val_loader = DataLoader(val_dataset, batch_size=32, shuffle=False)
+
+with torch.no_grad():
+    for images, labels, patient_ids in val_loader:
+        images, labels = images.to(device), labels.to(device)
+        six_channel_images = []
+        for img_tensor in images:
+            numpy_image = (img_tensor.permute(1, 2, 0).cpu().numpy() * 255).astype(np.uint8)
+            pil_image = Image.fromarray(numpy_image)
+            transformed_image = model_normal.transform(pil_image)
+            six_channel_images.append(transformed_image)
+        six_channel_images = torch.stack(six_channel_images).to(device)
+        outputs = model_normal(six_channel_images)  # Logits
+        probs = torch.softmax(outputs, dim=1)  # Probabilities
+        preds = torch.argmax(probs, dim=1)  # Binary predictions
+        i = 0
+        for image, patient_id in zip(six_channel_images, patient_ids):
+          i += 1
+          if i > 50:
+            break
+          image = image[None]
+          expl_normal = model_normal.explain(image)
+          filename = f"{patient_id}_normal_explanation.png"
+          plt.imshow(expl_normal["explanation"])
+          plt.axis('off')
+          plt.show()
+          image_path = os.path.join("/home/mkleinma/prediction_comparison/", filename)
+          plt.savefig(image_path, bbox_inches="tight", pad_inches=0)
+          plt.close()
+          
+          expl_blur = model_blur.explain(image)
+          filename = f"{patient_id}_blur_explanation.png"
+          plt.imshow(expl_blur["explanation"])
+          plt.axis('off')
+          plt.show()
+          image_path = os.path.join("/home/mkleinma/prediction_comparison/", filename)
+          plt.savefig(image_path, bbox_inches="tight", pad_inches=0)
+          plt.close()
+
+
+
