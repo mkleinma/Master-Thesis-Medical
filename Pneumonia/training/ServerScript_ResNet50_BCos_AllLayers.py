@@ -159,6 +159,10 @@ with open('results_resnet_bcos_allLayers_noAug.csv', 'w', newline='') as file:
             print(f"Skipping fold {current_fold} as it's already completed.")
             continue  # Skip completed folds
         
+        if fold == start_fold:
+            checkpoint_exists = False 
+            start_epoch = 0
+        
         # if we dont start from checkpoint: initialize new model to train
         if not checkpoint_exists or current_fold != start_fold:
             model = torch.hub.load('B-cos/B-cos-v2', 'resnet50', pretrained=True)
