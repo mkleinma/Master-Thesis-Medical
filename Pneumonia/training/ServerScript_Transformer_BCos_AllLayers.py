@@ -178,8 +178,8 @@ with open('results_transformer_bcos_allLayers_noAug.csv', 'w', newline='') as fi
         train_dataset = PneumoniaDataset(train_data, image_folder, transform=transform)
         val_dataset = PneumoniaDataset(val_data, image_folder, transform=transform)
 
-        train_loader = DataLoader(train_dataset, batch_size=32, shuffle=True) # higher batch size for stable training
-        val_loader = DataLoader(val_dataset, batch_size=32, shuffle=False)
+        train_loader = DataLoader(train_dataset, batch_size=16, shuffle=True) # higher batch size for stable training
+        val_loader = DataLoader(val_dataset, batch_size=16, shuffle=False)
         
         # Train for the current fold
         num_epochs = 30
@@ -294,7 +294,7 @@ with open('results_transformer_bcos_allLayers_noAug.csv', 'w', newline='') as fi
             
             if (f1 > best_f1):
                 best_f1 = f1
-                torch.save(model.state_dict(), os.path.join(model_output_dir, f"pneumonia_detection_model_bcos_trans_bestf1_{fold}_{epoch}.pth"))
+                torch.save(model.state_dict(), os.path.join(model_output_dir, f"pneumonia_detection_model_trans_bcos_bestf1_{fold}_{epoch}.pth"))
                 cm_file_path = os.path.join(cm_output_dir, f"confusion_matrix_best_f1_{fold}_{epoch}.json")
                 with open(cm_file_path, 'w') as cm_file:
                     json.dump({'confusion_matrix': cm.tolist()}, cm_file, indent=4)
