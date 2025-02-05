@@ -152,11 +152,7 @@ with open('results_transformer_baseline_allLayers_noAug.csv', 'w', newline='') a
         if checkpoint_exists and fold < start_fold:
             print(f"Skipping fold {current_fold} as it's already completed.")
             continue  # Skip completed folds
-        
-        if fold == start_fold:
-            checkpoint_exists = False  
-            start_epoch = 0 
-                
+                    
         #if we dont start from checkpoint: initialize new model to train
         if not checkpoint_exists or current_fold != start_fold:
             model = torch.hub.load('B-cos/B-cos-v2', 'standard_simple_vit_b_patch16_224', pretrained=True)        
@@ -276,7 +272,7 @@ with open('results_transformer_baseline_allLayers_noAug.csv', 'w', newline='') a
             
             if (f1 > best_f1):
                 best_f1 = f1
-                torch.save(model.state_dict(), os.path.join(model_output_dir, f"pneumonia_detection_model_bcos_trans_bestf1_{fold}_{epoch}.pth"))
+                torch.save(model.state_dict(), os.path.join(model_output_dir, f"pneumonia_detection_model_trans_base_bestf1_{fold}_{epoch}.pth"))
                 cm_file_path = os.path.join(cm_output_dir, f"confusion_matrix_best_f1_{fold}_{epoch}.json")
                 with open(cm_file_path, 'w') as cm_file:
                     json.dump({'confusion_matrix': cm.tolist()}, cm_file, indent=4)
