@@ -159,10 +159,6 @@ with open('results_resnet50_baseline_allLayers_noAug.csv', 'w', newline='') as f
             print(f"Skipping fold {current_fold} as it's already completed.")
             continue  # Skip completed folds
 
-        if fold == start_fold:
-            checkpoint_exists = False  # Ensure subsequent folds start fresh
-            start_epoch = 0  # Reset epoch for new folds
-
         if not checkpoint_exists or current_fold != start_fold:
             model = models.resnet50(weights=ResNet50_Weights.IMAGENET1K_V1)
             model.fc = nn.Linear(model.fc.in_features, 2)  # Binary classification
@@ -196,6 +192,10 @@ with open('results_resnet50_baseline_allLayers_noAug.csv', 'w', newline='') as f
             if (epoch < start_epoch):
                 print(f"Skipping epoch {epoch}, resuming from checkpoint at epoch {start_epoch}.")
                 continue
+
+            if fold == start_fold:
+                checkpoint_exists = False 
+                start_epoch = 0
 
             for images, labels in train_loader:
                 images, labels = images.to(device), labels.to(device)

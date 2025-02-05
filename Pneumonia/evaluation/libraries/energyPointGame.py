@@ -19,7 +19,7 @@ def energy_point_game(bbox, saliency_map):
   
   energy_bbox =  mask_bbox.sum()
   energy_whole = saliency_map.sum()
-  print(f"BBox: {energy_bbox}, Whole: {energy_whole}")
+  #print(f"BBox: {energy_bbox}, Whole: {energy_whole}")
   
   proportion = energy_bbox / energy_whole
   

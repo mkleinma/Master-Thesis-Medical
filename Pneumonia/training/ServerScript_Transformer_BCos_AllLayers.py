@@ -158,11 +158,6 @@ with open('results_transformer_bcos_allLayers_noAug.csv', 'w', newline='') as fi
         if checkpoint_exists and fold < start_fold:
             print(f"Skipping fold {current_fold} as it's already completed.")
             continue  # Skip completed folds
-        
-        if fold == start_fold:
-            checkpoint_exists = False 
-            start_epoch = 0
-
 
         # if we dont start from checkpoint: initialize new model to train
         if not checkpoint_exists or current_fold != start_fold:
@@ -197,6 +192,10 @@ with open('results_transformer_bcos_allLayers_noAug.csv', 'w', newline='') as fi
             if (epoch < start_epoch):
                 print(f"Skipping epoch {epoch}, resuming from checkpoint at epoch {start_epoch}.")
                 continue
+
+            if fold == start_fold:
+                checkpoint_exists = False 
+                start_epoch = 0
 
             for images, labels in train_loader:
                 labels = labels.to(device)

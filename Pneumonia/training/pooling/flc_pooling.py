@@ -32,11 +32,11 @@ class FLC_Pooling(nn.Module):
             size=x.size(2)
             window1d = np.abs(np.hamming(size))
             window2d = np.sqrt(np.outer(window1d,window1d))
-            window2d = torch.Tensor(window2d).to(device)
+            window2d = torch.Tensor(window2d).to(device)            
             self.window2d = window2d.unsqueeze(0).unsqueeze(0)
 
         orig_x_size = x.shape
-        x = F.pad(x, (x.shape[-1]//1, x.shape[-1]//1, x.shape[-2]//1, x.shape[-2]//1)).to(device)
+        x = F.pad(x, (x.shape[-1]//2, x.shape[-1]//2, x.shape[-2]//2, x.shape[-2]//2)).to(device) # geändert zu 2 wegen kosten
 
 
         if self.transpose:

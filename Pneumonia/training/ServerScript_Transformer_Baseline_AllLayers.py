@@ -193,6 +193,10 @@ with open('results_transformer_baseline_allLayers_noAug.csv', 'w', newline='') a
                 print(f"Skipping epoch {epoch}, resuming from checkpoint at epoch {start_epoch}.")
                 continue
             
+            if fold == start_fold:
+                checkpoint_exists = False 
+                start_epoch = 0
+
             for images, labels in train_loader:
                 images, labels = images.to(device), labels.to(device)
 
