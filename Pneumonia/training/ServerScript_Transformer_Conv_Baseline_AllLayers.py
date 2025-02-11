@@ -132,7 +132,7 @@ with open('results_transformer_baseline_allLayers_noAug.csv', 'w', newline='') a
     writer.writerow(['Fold', 'Epoch', 'Accuracy', 'Precision', 'Recall', 'F1', 'AUC'])
         
     # preemptive loading
-    model = torch.hub.load('B-cos/B-cos-v2', 'standard_simple_vit_b_patch16_224', pretrained=True)        
+    model = torch.hub.load('B-cos/B-cos-v2', 'standard_vitc_b_patch1_14', pretrained=True)        
     model.linear_head.linear = torch.nn.Linear(in_features=768, out_features=2, bias=True)
     optimizer = optim.Adam(model.parameters(), lr=1e-5)  #adjusted to lower learning rate due to transformer
 
@@ -174,8 +174,8 @@ with open('results_transformer_baseline_allLayers_noAug.csv', 'w', newline='') a
         train_dataset = PneumoniaDataset(train_data, image_folder, transform=transform)
         val_dataset = PneumoniaDataset(val_data, image_folder, transform=transform)
 
-        train_loader = DataLoader(train_dataset, batch_size=32, shuffle=True)
-        val_loader = DataLoader(val_dataset, batch_size=32, shuffle=False)
+        train_loader = DataLoader(train_dataset, batch_size=16, shuffle=True)
+        val_loader = DataLoader(val_dataset, batch_size=16, shuffle=False)
 
         # Training and validation loop for each fold
         num_epochs = 30
