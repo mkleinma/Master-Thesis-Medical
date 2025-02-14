@@ -1,6 +1,6 @@
 from torch import nn
 
-from bcos.common import BcosUtilMixin
+from .commonUtilities import BcosUtilMixin
 
 __all__ = ["DetachableModule", "BcosSequential"]
 

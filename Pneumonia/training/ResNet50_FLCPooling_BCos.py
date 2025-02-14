@@ -24,7 +24,7 @@ import numpy as np
 import csv
 
 from libraries.bcosconv2d import NormedConv2d
-from pooling.blur_bcosconv2d import ModifiedBcosConv2d
+from pooling.flc_bcosconv2d import ModifiedFLCBcosConv2d
 
 
 ## assisting script
@@ -88,14 +88,14 @@ torch.manual_seed(0)
 #csv_path = r"/home/mkleinma/rsna-pneumonia-detection-challenge/stage_2_train_labels.csv"
 #image_folder = r"/home/mkleinma/rsna-pneumonia-detection-challenge/stage_2_train_images"
 #splits_path = r"/home/mkleinma/training_splits/splits_balanced.pkl"
-#cm_output_dir = r"/home/mkleinma/trained_models/30_epochs_bcos_blur/seed_0/confusion_matrix"
-#model_output_dir = r"/home/mkleinma/trained_models/30_epochs_bcos_blur/seed_0/"
+#cm_output_dir = r"/home/mkleinma/trained_models/30_epochs_bcos_flc/seed_0_differentScheduler/confusion_matrix"
+#model_output_dir = r"/home/mkleinma/trained_models/30_epochs_bcos_flc/seed_0_differentScheduler/"
 
 csv_path = r"/pfs/work7/workspace/scratch/ma_mkleinma-thesis/rsna-pneumonia-detection-challenge/stage_2_train_labels.csv"
 image_folder = r"/pfs/work7/workspace/scratch/ma_mkleinma-thesis/rsna-pneumonia-detection-challenge/stage_2_train_images"
 splits_path = r"/pfs/work7/workspace/scratch/ma_mkleinma-thesis/training_splits/splits_balanced.pkl"
-cm_output_dir = r"/pfs/work7/workspace/scratch/ma_mkleinma-thesis/trained_models/30_epochs_bcos_resnet50_blur/seed_0/confusion_matrix"
-model_output_dir = r"/pfs/work7/workspace/scratch/ma_mkleinma-thesis/trained_models/30_epochs_bcos_resnet50_blur/seed_0/"
+cm_output_dir = r"/pfs/work7/workspace/scratch/ma_mkleinma-thesis/trained_models/30_epochs_bcos_resnet50_flc/seed_0/confusion_matrix"
+model_output_dir = r"/pfs/work7/workspace/scratch/ma_mkleinma-thesis/trained_models/30_epochs_bcos_resnet50_flc/seed_0/"
 
 # Load data and splits
 data = pd.read_csv(csv_path)
@@ -129,7 +129,6 @@ class PneumoniaDataset(Dataset):
 
         return tensor_image, torch.tensor(label, dtype=torch.long)
 
-
 # Define transformations for the datasets
 transform = transforms.Compose([
     transforms.Resize((224, 224)),
@@ -142,21 +141,20 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
   
 model = torch.hub.load('B-cos/B-cos-v2', 'resnet50', pretrained=True)
 
-model.layer2[0].conv2 = ModifiedBcosConv2d(128, 128, kernel_size=(3, 3), stride=(2, 2), padding=(1, 1), b=2)
-model.layer2[0].downsample[0] = ModifiedBcosConv2d(256, 512, kernel_size=(1, 1), stride=(2, 2), b=2)
+model.layer2[0].conv2 = ModifiedFLCBcosConv2d(128, 128, kernel_size=(3, 3), stride=(2, 2), padding=(1, 1), b=2, transpose=True)
+model.layer2[0].downsample[0] = ModifiedFLCBcosConv2d(256, 512, kernel_size=(1, 1), stride=(2, 2), b=2, transpose=False)
 
-model.layer3[0].conv2 = ModifiedBcosConv2d(256, 256, kernel_size=(3, 3), stride=(2, 2), padding=(1, 1), b=2)
-model.layer3[0].downsample[0] = ModifiedBcosConv2d(512, 1024, kernel_size=(1, 1), stride=(2, 2), b=2)
+model.layer3[0].conv2 = ModifiedFLCBcosConv2d(256, 256, kernel_size=(3, 3), stride=(2, 2), padding=(1, 1), b=2, transpose=True)
+model.layer3[0].downsample[0] = ModifiedFLCBcosConv2d(512, 1024, kernel_size=(1, 1), stride=(2, 2), b=2, transpose=False)
 
-model.layer4[0].conv2 = ModifiedBcosConv2d(512, 512, kernel_size=(3, 3), stride=(2, 2), padding=(1, 1), b=2)
-model.layer4[0].downsample[0] = ModifiedBcosConv2d(1024, 2048, kernel_size=(1, 1), stride=(2, 2), b=2)
-    
+model.layer4[0].conv2 = ModifiedFLCBcosConv2d(512, 512, kernel_size=(3, 3), stride=(2, 2), padding=(1, 1), b=2, transpose=True)
+model.layer4[0].downsample[0] = ModifiedFLCBcosConv2d(1024, 2048, kernel_size=(1, 1), stride=(2, 2), b=2, transpose=False)    
 model.fc.linear = NormedConv2d(2048, 2, kernel_size=(1, 1), stride=(1, 1), bias=False) # code from B-cos paper reused to adjust network
 
     
 criterion = nn.CrossEntropyLoss()
 optimizer = optim.Adam(model.parameters(), lr=1e-4)
-scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.1, patience=5, verbose=True)
+scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=30, eta_min=0)
 start_epoch, start_fold, best_f1, checkpoint_exists = 0, 0, 0.0, False
     
 # we check for latest checkpoint and if it exists, then we load the checkpoint and start from there - else we start from 0 and it does not exist
@@ -178,18 +176,18 @@ for current_fold, (train_idx, val_idx) in enumerate(splits):
         best_f1 = 0.0 # reset it after each fold
         model = torch.hub.load('B-cos/B-cos-v2', 'resnet50', pretrained=True)
 
-        model.layer2[0].conv2 = ModifiedBcosConv2d(128, 128, kernel_size=(3, 3), stride=(2, 2), padding=(1, 1), b=2)
-        model.layer2[0].downsample[0] = ModifiedBcosConv2d(256, 512, kernel_size=(1, 1), stride=(2, 2), b=2)
+        model.layer2[0].conv2 = ModifiedFLCBcosConv2d(128, 128, kernel_size=(3, 3), stride=(2, 2), padding=(1, 1), b=2, transpose=True)
+        model.layer2[0].downsample[0] = ModifiedFLCBcosConv2d(256, 512, kernel_size=(1, 1), stride=(2, 2), b=2, transpose=False)
 
-        model.layer3[0].conv2 = ModifiedBcosConv2d(256, 256, kernel_size=(3, 3), stride=(2, 2), padding=(1, 1), b=2)
-        model.layer3[0].downsample[0] = ModifiedBcosConv2d(512, 1024, kernel_size=(1, 1), stride=(2, 2), b=2)
+        model.layer3[0].conv2 = ModifiedFLCBcosConv2d(256, 256, kernel_size=(3, 3), stride=(2, 2), padding=(1, 1), b=2, transpose=True)
+        model.layer3[0].downsample[0] = ModifiedFLCBcosConv2d(512, 1024, kernel_size=(1, 1), stride=(2, 2), b=2, transpose=False)
 
-        model.layer4[0].conv2 = ModifiedBcosConv2d(512, 512, kernel_size=(3, 3), stride=(2, 2), padding=(1, 1), b=2)
-        model.layer4[0].downsample[0] = ModifiedBcosConv2d(1024, 2048, kernel_size=(1, 1), stride=(2, 2), b=2)            
+        model.layer4[0].conv2 = ModifiedFLCBcosConv2d(512, 512, kernel_size=(3, 3), stride=(2, 2), padding=(1, 1), b=2, transpose=True)
+        model.layer4[0].downsample[0] = ModifiedFLCBcosConv2d(1024, 2048, kernel_size=(1, 1), stride=(2, 2), b=2, transpose=False)        
         model.fc.linear = NormedConv2d(2048, 2, kernel_size=(1, 1), stride=(1, 1), bias=False) # code from B-cos paper reused to adjust network
 
         optimizer = optim.Adam(model.parameters(), lr=1e-4)
-        scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.1, patience=5, verbose=True)
+        scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=30, eta_min=0)
         model = model.to(device)
         checkpoint_exists = False
 
@@ -347,6 +345,3 @@ for current_fold, (train_idx, val_idx) in enumerate(splits):
     model_path = f"pneumonia_detection_model_fold_{fold}_resnet_bcos.pth"
     torch.save(model.state_dict(), os.path.join(model_output_dir, model_path))
     log_writer.close()
-
-
-

@@ -14,9 +14,6 @@ import torchvision.transforms as T
 from torch.nn import init as init
 from torch.nn.modules.batchnorm import _BatchNorm
 import numpy as np
-import logging
-
-logging.basicConfig(filename="train_debug_flc.log", level=logging.DEBUG, format="%(asctime)s - %(levelname)s - %(message)s")
 
 class FLC_Pooling(nn.Module):
     # pooling through selecting only the low frequent part in the fourier domain and only using this part to go back into the spatial domain
@@ -27,14 +24,9 @@ class FLC_Pooling(nn.Module):
         super(FLC_Pooling, self).__init__()
 
     def forward(self, x):        
+        #x = x.cuda()
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         x = x.to(torch.float32).to(device)
-        
-        if x.numel() > 0 and not torch.isnan(x).any() and not torch.isinf(x).any():
-            logging.debug(f"Input to FLC_Pooling - Min: {x.min().item()}, Max: {x.max().item()}, Mean: {x.mean().item()}")
-        else:
-            logging.error("Input to FLC_Pooling is empty or contains NaN/Inf values!")
-
         #import ipdb;ipdb.set_trace()
         if self.window2d is None:
             size=x.size(2)
@@ -50,19 +42,12 @@ class FLC_Pooling(nn.Module):
         if self.transpose:
             x = x.transpose(2,3)
         
-        try:
-            low_part = torch.fft.fftshift(torch.fft.fft2(x, norm='forward'))
-            if torch.isnan(low_part).any() or torch.isinf(low_part).any():
-                logging.error("NaN/Inf detected in FFT output!")
-        except Exception as e:
-            logging.exception(f"FFT computation failed: {e}")
-            return x  # Return input to avoid crashing
-
+        low_part = torch.fft.fftshift(torch.fft.fft2(x, norm='forward'))
+        #low_part = low_part.cuda()*self.window2d
         try:
             assert low_part.size(2) == self.window2d.size(2)
             assert low_part.size(3) == self.window2d.size(3)
             low_part = low_part*self.window2d
-            logging.debug(f"After Windowing - Min: {low_part.min().item()}, Max: {low_part.max().item()}")
         except Exception:
             try:
                 assert low_part.size(2) == self.window2d.size(2)
@@ -80,12 +65,17 @@ class FLC_Pooling(nn.Module):
         #low_part = low_part[:,:,int(x.size()[2]/4):int(x.size()[2]/4*3),int(x.size()[3]/4):int(x.size()[3]/4*3)]
         low_part = low_part[:,:,int(orig_x_size[2]/4):int(orig_x_size[2]/4*3),int(orig_x_size[3]/4):int(orig_x_size[3]/4*3)]
         
-        try:
-            output = torch.fft.ifft2(torch.fft.ifftshift(low_part), norm='forward').real
-            if torch.isnan(output).any() or torch.isinf(output).any():
-                logging.error("NaN/Inf detected in IFFT output!")
-        except Exception as e:
-            logging.exception(f"IFFT computation failed: {e}")
-            return x  # Return input to avoid crashing
+        return torch.fft.ifft2(torch.fft.ifftshift(low_part), norm='forward').real.half().to(device)
 
-        return output.to(device)
+
+class FLC_Pooling_NoHW(nn.Module):
+    # pooling trough selecting only the low frequent part in the fourier domain and only using this part to go back into the spatial domain
+    # save computations as we do not need to do the downsampling trough conv with stride 2
+    def __init__(self):
+        super(FLC_Pooling_NoHW, self).__init__()
+
+    def forward(self, x):
+
+        low_part = torch.fft.fftshift(torch.fft.fft2(x, norm='forward'))[:,:,int(x.size()[2]/4):int(x.size()[2]/4*3),int(x.size()[3]/4):int(x.size()[3]/4*3)]
+        
+        return torch.fft.ifft2(torch.fft.ifftshift(low_part), norm='forward').real
