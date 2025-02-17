@@ -139,7 +139,7 @@ with open('results_transformer_bcos_allLayers_noAug.csv', 'w', newline='') as fi
     writer.writerow(['Fold', 'Epoch', 'Accuracy', 'Precision', 'Recall', 'F1', 'AUC'])
     
     # preemptive loading
-    model = torch.hub.load('B-cos/B-cos-v2', 'simple_vit_b_patch16_224', pretrained=True)
+    model = torch.hub.load('B-cos/B-cos-v2', 'vitc_b_patch1_14', pretrained=True)
     model[0].linear_head.linear = BcosLinear(in_features=768, out_features=2, bias=False, b=2)
     optimizer = optim.Adam(model.parameters(), lr=1e-5) #adjusted to lower learning rate due to transformer
     

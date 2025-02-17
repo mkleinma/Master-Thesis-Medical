@@ -14,6 +14,8 @@ import pydicom
 import random
 import matplotlib.pyplot as plt
 
+from collections import OrderedDict
+
 from libraries.bcosconv2d import NormedConv2d
 from pooling.flc_bcosconv2d import ModifiedFLCBcosConv2d
 
@@ -23,11 +25,11 @@ random.seed(0)
 torch.manual_seed(0)
 
 # Paths
-csv_path = r"/home/mkleinma/rsna-pneumonia-detection-challenge/stage_2_train_labels.csv"
-image_folder = r"/home/mkleinma/rsna-pneumonia-detection-challenge/stage_2_train_images"
-splits_path = r"/home/mkleinma/training_splits/splits_balanced.pkl"
-model_path_flc = r"/home/mkleinma/trained_models/30_epochs_bcos_flc/seed_0/pneumonia_detection_model_bcos_trans_bestf1_1_23.pth" 
-model_path_normal = r"/home/mkleinma/trained_models/30_epochs_bcos_allLayers_224x224/pneumonia_detection_model_baseline_bestf1_1_11.pth"
+csv_path = r"C:\Users\Admin\Documents\rsna-pneumonia-detection-challenge\stage_2_train_labels.csv"
+image_folder = r"C:\Users\Admin\Documents\rsna-pneumonia-detection-challenge\stage_2_train_images"
+splits_path = r"G:\Meine Ablage\Universität\Master Thesis\Pneumonia\training\splits\splits_balanced.pkl"
+model_path_flc = r"C:\Users\Admin\Documents\MasterThesis\results\ResNet50_BCos_FLC_HammingWindow_Fix\seed_0\pneumonia_detection_model_bcos_trans_bestf1_1_25.pth"
+model_path_normal = r"C:\Users\Admin\Documents\MasterThesis\results\ResNet_BCos\seed_0\pneumonia_detection_model_resnet_bcos_bestf1_1_26.pth"
 data = pd.read_csv(csv_path)
 with open(splits_path, 'rb') as f:
     splits = pickle.load(f)
@@ -56,28 +58,26 @@ class PneumoniaDataset(Dataset):
         return tensor_image, torch.tensor(label, dtype=torch.long), patient_id
     
 
-device = torch.device("cuda:4" if torch.cuda.is_available() else "cpu")
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 model_normal = torch.hub.load('B-cos/B-cos-v2', 'resnet50', pretrained=True)
 model_normal.fc.linear = NormedConv2d(2048, 2, kernel_size=(1, 1), stride=(1, 1), bias=False)
 state_dict = torch.load(model_path_normal, map_location=device)
+
 model_normal.load_state_dict(state_dict)
 model_normal = model_normal.to(device)
 model_normal.eval()
 
 # Load model
 model_flc = torch.hub.load('B-cos/B-cos-v2', 'resnet50', pretrained=True)
-model_flc.conv1 = ModifiedFLCBcosConv2d(6, 64, kernel_size=(7,7), stride=(2, 2), padding=(3, 3), b=2)
+model_flc.layer2[0].conv2 = ModifiedFLCBcosConv2d(128, 128, kernel_size=(3, 3), stride=(2, 2), padding=(1, 1), b=2, transpose=True)
+model_flc.layer2[0].downsample[0] = ModifiedFLCBcosConv2d(256, 512, kernel_size=(1, 1), stride=(2, 2), b=2, transpose=False)
 
-model_flc.layer2[0].conv2 = ModifiedFLCBcosConv2d(128, 128, kernel_size=(3, 3), stride=(2, 2), padding=(1, 1), b=2)
-model_flc.layer2[0].downsample[0] = ModifiedFLCBcosConv2d(256, 512, kernel_size=(1, 1), stride=(2, 2), b=2)
+model_flc.layer3[0].conv2 = ModifiedFLCBcosConv2d(256, 256, kernel_size=(3, 3), stride=(2, 2), padding=(1, 1), b=2, transpose=True)
+model_flc.layer3[0].downsample[0] = ModifiedFLCBcosConv2d(512, 1024, kernel_size=(1, 1), stride=(2, 2), b=2, transpose=False)
 
-model_flc.layer3[0].conv2 = ModifiedFLCBcosConv2d(256, 256, kernel_size=(3, 3), stride=(2, 2), padding=(1, 1), b=2)
-model_flc.layer3[0].downsample[0] = ModifiedFLCBcosConv2d(512, 1024, kernel_size=(1, 1), stride=(2, 2), b=2)
-
-model_flc.layer4[0].conv2 = ModifiedFLCBcosConv2d(512, 512, kernel_size=(3, 3), stride=(2, 2), padding=(1, 1), b=2)
-model_flc.layer4[0].downsample[0] = ModifiedFLCBcosConv2d(1024, 2048, kernel_size=(1, 1), stride=(2, 2), b=2)
-    
+model_flc.layer4[0].conv2 = ModifiedFLCBcosConv2d(512, 512, kernel_size=(3, 3), stride=(2, 2), padding=(1, 1), b=2, transpose=True)
+model_flc.layer4[0].downsample[0] = ModifiedFLCBcosConv2d(1024, 2048, kernel_size=(1, 1), stride=(2, 2), b=2, transpose=False)    
 model_flc.fc.linear = NormedConv2d(2048, 2, kernel_size=(1, 1), stride=(1, 1), bias=False) # code from B-cos paper reused to adjust network
 
 state_dict = torch.load(model_path_flc, map_location=device)
@@ -124,7 +124,7 @@ with torch.no_grad():
           plt.imshow(expl_normal["explanation"])
           plt.axis('off')
           plt.show()
-          image_path = os.path.join("/home/mkleinma/prediction_comparison_flcnormal/", filename)
+          image_path = os.path.join(r"C:\Users\Admin\Documents\MasterThesis\comparison_images\FLCWithHammingWindow_fix", filename)
           plt.savefig(image_path, bbox_inches="tight", pad_inches=0)
           plt.close()
           
@@ -133,7 +133,7 @@ with torch.no_grad():
           plt.imshow(expl_flc["explanation"])
           plt.axis('off')
           plt.show()
-          image_path = os.path.join("/home/mkleinma/prediction_comparison_flcnormal/", filename)
+          image_path = os.path.join(r"C:\Users\Admin\Documents\MasterThesis\comparison_images\FLCWithHammingWindow_fix", filename)
           plt.savefig(image_path, bbox_inches="tight", pad_inches=0)
           plt.close()
 
