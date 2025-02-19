@@ -189,7 +189,7 @@ with open('results_resnet50_baseline_allLayers_noAug.csv', 'w', newline='') as f
             correct = 0
             total = 0
             
-            if (epoch < start_epoch):
+            if (epoch < start_epoch and start_epoch < num_epochs):
                 print(f"Skipping epoch {epoch}, resuming from checkpoint at epoch {start_epoch}.")
                 continue
 

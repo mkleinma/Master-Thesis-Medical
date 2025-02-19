@@ -189,7 +189,7 @@ with open('results_transformer_bcos_allLayers_noAug.csv', 'w', newline='') as fi
             correct = 0
             total = 0
                         
-            if (epoch < start_epoch and start_epoch < 30): # excludes failure case where the next epoch is 30 because epoch counts from 0 to 29 and after 29 -> 30 which is 31th epoch that doesn't exist
+            if (epoch < start_epoch and start_epoch < num_epochs): # excludes failure case where the next epoch is 30 because epoch counts from 0 to 29 and after 29 -> 30 which is 31th epoch that doesn't exist
                 print(f"Skipping epoch {epoch}, resuming from checkpoint at epoch {start_epoch}.")
                 continue
             

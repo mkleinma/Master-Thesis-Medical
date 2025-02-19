@@ -44,8 +44,7 @@ class FLC_Pooling(nn.Module):
             self.window2d = window2d.unsqueeze(0).unsqueeze(0)
 
         orig_x_size = x.shape
-        x = F.pad(x, (x.shape[-1]//1, x.shape[-1]//1, x.shape[-2]//1, x.shape[-2]//1)).to(device) # geändert zu 2 wegen kosten
-
+        x = F.pad(x, (x.shape[-1]//1 +1, x.shape[-1]//1, x.shape[-2]//1 +1, x.shape[-2]//1))
 
         if self.transpose:
             x = x.transpose(2,3)

@@ -124,16 +124,16 @@ with torch.no_grad():
           plt.imshow(expl_normal["explanation"])
           plt.axis('off')
           plt.show()
-          image_path = os.path.join(r"C:\Users\Admin\Documents\MasterThesis\comparison_images\FLCWithHammingWindow_fix", filename)
+          image_path = os.path.join(r"C:\Users\Admin\Documents\MasterThesis\comparison_images\FLCWithHammingWindow_fix2", filename)
           plt.savefig(image_path, bbox_inches="tight", pad_inches=0)
           plt.close()
           
           expl_flc = model_flc.explain(image)
-          filename = f"{patient_id}_flc_explanation.png"
+          filename = f"{patient_id}_flc_explanation2.png"
           plt.imshow(expl_flc["explanation"])
           plt.axis('off')
           plt.show()
-          image_path = os.path.join(r"C:\Users\Admin\Documents\MasterThesis\comparison_images\FLCWithHammingWindow_fix", filename)
+          image_path = os.path.join(r"C:\Users\Admin\Documents\MasterThesis\comparison_images\FLCWithHammingWindow_fix2", filename)
           plt.savefig(image_path, bbox_inches="tight", pad_inches=0)
           plt.close()
 

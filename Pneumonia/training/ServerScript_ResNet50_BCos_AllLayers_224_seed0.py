@@ -157,6 +157,7 @@ for current_fold, (train_idx, val_idx) in enumerate(splits):
             
     # if we dont start from checkpoint: initialize new model to train
     if not checkpoint_exists or current_fold != start_fold:
+        best_f1 = 0.0
         model = torch.hub.load('B-cos/B-cos-v2', 'resnet50', pretrained=True)
         model.fc.linear = NormedConv2d(2048, 2, kernel_size=(1, 1), stride=(1, 1), bias=False) # code from B-cos paper reused to adjust network
         optimizer = optim.Adam(model.parameters(), lr=1e-4)
@@ -186,7 +187,7 @@ for current_fold, (train_idx, val_idx) in enumerate(splits):
         correct = 0
         total = 0
         
-        if (epoch < start_epoch and start_epoch < 30): # excludes failure case where the next epoch is 30 because epoch counts from 0 to 29 and after 29 -> 30 which is 31th epoch that doesn't exist
+        if (epoch < start_epoch and start_epoch < num_epochs): # excludes failure case where the next epoch is 30 because epoch counts from 0 to 29 and after 29 -> 30 which is 31th epoch that doesn't exist
             print(f"Skipping epoch {epoch}, resuming from checkpoint at epoch {start_epoch}.")
             continue
         
