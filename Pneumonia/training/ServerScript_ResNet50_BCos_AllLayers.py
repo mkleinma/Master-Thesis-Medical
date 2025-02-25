@@ -113,17 +113,15 @@ class PneumoniaDataset(Dataset):
         dicom = pydicom.dcmread(image_path)
         image = dicom.pixel_array
         image = Image.fromarray(image).convert("RGB")
-        tensor_image = TF.to_tensor(image)
         
         if self.transform:
             image = self.transform(image)
 
-        return tensor_image, torch.tensor(label, dtype=torch.long)
+        return image, torch.tensor(label, dtype=torch.long)
 
 
 # Define transformations for the datasets
 transform = transforms.Compose([
-    transforms.Resize((224, 224)),
     transforms.ToTensor(),
     transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])  # Normalize with ImageNet stats
 ])
@@ -206,7 +204,7 @@ with open('results_resnet_bcos_allLayers_noAug.csv', 'w', newline='') as file:
                 for img_tensor in images:
                   numpy_image = (img_tensor.permute(1, 2, 0).cpu().numpy() * 255).astype(np.uint8)
                   pil_image = Image.fromarray(numpy_image)
-                  transformed_image = model.transform(pil_image)
+                  transformed_image = model.transform(pil_image) # to 224x224 resolution
                   six_channel_images.append(transformed_image)
                 
                 six_channel_images = torch.stack(six_channel_images).to(device)

@@ -79,8 +79,8 @@ torch.manual_seed(0)
 csv_path = r"/pfs/work7/workspace/scratch/ma_mkleinma-thesis/rsna-pneumonia-detection-challenge/stage_2_train_labels.csv"
 image_folder = r"/pfs/work7/workspace/scratch/ma_mkleinma-thesis/rsna-pneumonia-detection-challenge/stage_2_train_images"
 splits_path = r"/pfs/work7/workspace/scratch/ma_mkleinma-thesis/training_splits/splits_balanced.pkl"
-cm_output_dir = r"/pfs/work7/workspace/scratch/ma_mkleinma-thesis/trained_models/30_epochs_baseline_transformer_b_16/seed_0/confusion_matrix"
-model_output_dir = r"/pfs/work7/workspace/scratch/ma_mkleinma-thesis/trained_models/30_epochs_baseline_transformer_b_16/seed_0/"
+cm_output_dir = r"/pfs/work7/workspace/scratch/ma_mkleinma-thesis/trained_models/30_epochs_baseline_transformer_conv/seed_0/confusion_matrix"
+model_output_dir = r"/pfs/work7/workspace/scratch/ma_mkleinma-thesis/trained_models/30_epochs_baseline_transformer_conv/seed_0/"
 
 
 
@@ -106,12 +106,11 @@ class PneumoniaDataset(Dataset):
         dicom = pydicom.dcmread(image_path)
         image = dicom.pixel_array
         image = Image.fromarray(image).convert("RGB")
-        tensor_image = TF.to_tensor(image)
 
         if self.transform:
             image = self.transform(image)
         
-        return tensor_image, torch.tensor(label, dtype=torch.long)
+        return image, torch.tensor(label, dtype=torch.long)
 
 
 # Define transformations for the training and validation sets
@@ -155,7 +154,8 @@ with open('results_transformer_baseline_allLayers_noAug.csv', 'w', newline='') a
                     
         #if we dont start from checkpoint: initialize new model to train
         if not checkpoint_exists or current_fold != start_fold:
-            model = torch.hub.load('B-cos/B-cos-v2', 'standard_simple_vit_b_patch16_224', pretrained=True)        
+            best_f1 = 0.0 # reset it after each fold
+            model = torch.hub.load('B-cos/B-cos-v2', 'standard_vitc_b_patch1_14', pretrained=True)        
             model.linear_head.linear = torch.nn.Linear(in_features=768, out_features=2, bias=True)
             optimizer = optim.Adam(model.parameters(), lr=1e-5)  
             scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.1, patience=5, verbose=True)
@@ -272,7 +272,7 @@ with open('results_transformer_baseline_allLayers_noAug.csv', 'w', newline='') a
             
             if (f1 > best_f1):
                 best_f1 = f1
-                torch.save(model.state_dict(), os.path.join(model_output_dir, f"pneumonia_detection_model_trans_base_bestf1_{fold}_{epoch}.pth"))
+                torch.save(model.state_dict(), os.path.join(model_output_dir, f"pneumonia_detection_model_trans_base_conv_bestf1_{fold}_{epoch}.pth"))
                 cm_file_path = os.path.join(cm_output_dir, f"confusion_matrix_best_f1_{fold}_{epoch}.json")
                 with open(cm_file_path, 'w') as cm_file:
                     json.dump({'confusion_matrix': cm.tolist()}, cm_file, indent=4)
@@ -296,7 +296,7 @@ with open('results_transformer_baseline_allLayers_noAug.csv', 'w', newline='') a
             
         print(f"Finished training fold {fold}.\n")
         
-        model_path = f"pneumonia_detection_model_fold_{fold}_transformer_baseline.pth"
+        model_path = f"pneumonia_detection_model_fold_{fold}_transformer_baseline_conv.pth"
         torch.save(model.state_dict(),  os.path.join(model_output_dir, model_path))
         log_writer.close()
 

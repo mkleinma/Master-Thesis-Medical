@@ -114,17 +114,15 @@ class PneumoniaDataset(Dataset):
         dicom = pydicom.dcmread(image_path)
         image = dicom.pixel_array
         image = Image.fromarray(image).convert("RGB")
-        tensor_image = TF.to_tensor(image)
         
         if self.transform:
             image = self.transform(image)
 
-        return tensor_image, torch.tensor(label, dtype=torch.long)
+        return image, torch.tensor(label, dtype=torch.long)
 
 
 # Define transformations for the datasets
 transform = transforms.Compose([
-    transforms.Resize((224, 224)),
     transforms.ToTensor(),
     transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])  # Normalize with ImageNet stats
 ])

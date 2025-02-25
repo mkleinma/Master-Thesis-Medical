@@ -123,9 +123,9 @@ class PneumoniaDataset(Dataset):
         if self.transform: # does not work atm but its okay
             image = self.transform(image)
 
-        tensor_image = TF.to_tensor(image)
+        #tensor_image = TF.to_tensor(image)
         
-        return tensor_image, torch.tensor(label, dtype=torch.long)
+        return image, torch.tensor(label, dtype=torch.long)
 
 
 # Define transformations for the datasets
@@ -144,10 +144,10 @@ import ConfigSpace as CS
 import numpy as np
 
 cs = CS.ConfigurationSpace()
-cs.add([CS.UniformFloatHyperparameter("lr", lower=1e-6, upper=1e-3, default_value=1e-4, log=True), 
-        CS.UniformIntegerHyperparameter("batch_size", lower=8, upper=32, default_value=16, log=True),
-        CS.UniformFloatHyperparameter("weight_decay", lower=0, upper=1e-4, default_value=0, log=True),
-        CS.UniformIntegerHyperparameter("patience", lower=3, upper=10, default_value=5, log=True)])
+cs.add([CS.CategoricalHyperparameter("lr", [1e-6, 1e-5, 1e-4]), 
+        CS.CategoricalHyperparameter("batch_size", [8, 16, 32]),
+        CS.CategoricalHyperparameter("weight_decay", [0, 1e-6, 1e-5, 1e-4, 1e-3]),
+        CS.CategoricalHyperparameter("patience", [3, 5, 10])])
 
 
 
@@ -161,7 +161,8 @@ def train_model(config: Union[ConfigSpace.Configuration, List, np.array], fideli
     criterion = nn.CrossEntropyLoss()
     optimizer = optim.Adam(model.parameters(), lr=config['lr'], weight_decay=config['weight_decay'])
     scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.1, patience=config['patience'], verbose=True)
-    
+    print(f"Running train_model with config: {config}, fidelity: {fidelity}")
+
     
     total_f1 = 0
     total_val_loss = 0
@@ -169,12 +170,10 @@ def train_model(config: Union[ConfigSpace.Configuration, List, np.array], fideli
 
     for fold, (train_idx, val_idx) in enumerate(splits):
         train_dataset = PneumoniaDataset(data.iloc[train_idx], image_folder, transform=transforms.Compose([
-            transforms.Resize((224, 224)),
             transforms.ToTensor(),
             transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
         ]))
         val_dataset = PneumoniaDataset(data.iloc[val_idx], image_folder, transform=transforms.Compose([
-            transforms.Resize((224, 224)),
             transforms.ToTensor(),
             transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
         ]))
@@ -183,12 +182,26 @@ def train_model(config: Union[ConfigSpace.Configuration, List, np.array], fideli
         val_loader = DataLoader(val_dataset, batch_size=int(config['batch_size']), shuffle=False)
         
         for epoch in range(int(fidelity)):
+            print(f"Starting epoch {epoch+1}/{int(fidelity)}")
             model.train()
             for images, labels in train_loader:
-                images, labels = images.to(device), labels.to(device)
-                optimizer.zero_grad()
-                outputs = model(images)
+                labels = labels.to(device)
+                
+                six_channel_images = []
+                # create model.transform images
+                for img_tensor in images:
+                  numpy_image = (img_tensor.permute(1, 2, 0).cpu().numpy() * 255).astype(np.uint8)
+                  pil_image = Image.fromarray(numpy_image)
+                  transformed_image = model.transform(pil_image)
+                  six_channel_images.append(transformed_image)
+                
+                six_channel_images = torch.stack(six_channel_images).to(device)
+
+                outputs = model(six_channel_images)
+                if torch.isnan(outputs).any():
+                    print("Warning: NaN detected in model outputs during training!")
                 loss = criterion(outputs, labels)
+                optimizer.zero_grad()
                 loss.backward()
                 optimizer.step()
             
@@ -203,9 +216,18 @@ def train_model(config: Union[ConfigSpace.Configuration, List, np.array], fideli
 
             with torch.no_grad():
                 for images, labels in val_loader:
-                    images, labels = images.to(device), labels.to(device)
+                    labels = labels.to(device)
 
-                    outputs = model(images)
+                    six_channel_images = []
+                    for img_tensor in images:
+                        numpy_image = (img_tensor.permute(1, 2, 0).cpu().numpy() * 255).astype(np.uint8)
+                        pil_image = Image.fromarray(numpy_image)
+                        transformed_image = model.transform(pil_image)
+                        six_channel_images.append(transformed_image)
+                      
+                    six_channel_images = torch.stack(six_channel_images).to(device)
+
+                    outputs = model(six_channel_images)
                     loss = criterion(outputs, labels)
                     
                     val_loss += loss.item() * images.size(0)
@@ -230,7 +252,16 @@ def train_model(config: Union[ConfigSpace.Configuration, List, np.array], fideli
     avg_f1 = total_f1 / len(splits)
     avg_val_loss = total_val_loss / len(splits)
     avg_val_accuracy = total_val_accuracy / len(splits)
+    print(f"Final avg_f1: {avg_f1}, avg_val_accuracy: {avg_val_accuracy} before returning default values")
+
+    
+    if np.isnan(avg_f1) or np.isinf(avg_f1):
+        avg_f1 = -1  # Set to a default low value
         
+    if np.isnan(avg_val_accuracy) or np.isinf(avg_val_accuracy):
+        avg_val_accuracy = 0.0  # Set to 0 if invalid
+
+
     return {
         "fitness": -avg_f1,  # DEHB minimizes this value
         "cost": fidelity * len(splits),  # Total number of epochs across all folds
@@ -243,10 +274,10 @@ de = DEHB(f=train_model,
     dimensions=4,
     cs=cs,
     min_fidelity=1,
-    max_fidelity=7, # number of epochs to run it for
+    max_fidelity=5, # number of epochs to run it for
     output_path="/pfs/work7/workspace/scratch/ma_mkleinma-thesis/dehb_results",
     n_workers=1)
-incumbent = de.run(fevals=10)
+incumbent = de.run(fevals=10, runtime=86400)  # Stop after 1 day 
 
 print(incumbent)
 

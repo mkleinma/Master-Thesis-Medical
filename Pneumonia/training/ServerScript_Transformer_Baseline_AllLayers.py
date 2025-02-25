@@ -106,12 +106,11 @@ class PneumoniaDataset(Dataset):
         dicom = pydicom.dcmread(image_path)
         image = dicom.pixel_array
         image = Image.fromarray(image).convert("RGB")
-        tensor_image = TF.to_tensor(image)
 
         if self.transform:
             image = self.transform(image)
         
-        return tensor_image, torch.tensor(label, dtype=torch.long)
+        return image, torch.tensor(label, dtype=torch.long)
 
 
 # Define transformations for the training and validation sets
@@ -174,8 +173,8 @@ with open('results_transformer_baseline_allLayers_noAug.csv', 'w', newline='') a
         train_dataset = PneumoniaDataset(train_data, image_folder, transform=transform)
         val_dataset = PneumoniaDataset(val_data, image_folder, transform=transform)
 
-        train_loader = DataLoader(train_dataset, batch_size=32, shuffle=True)
-        val_loader = DataLoader(val_dataset, batch_size=32, shuffle=False)
+        train_loader = DataLoader(train_dataset, batch_size=16, shuffle=True)
+        val_loader = DataLoader(val_dataset, batch_size=16, shuffle=False)
 
         # Training and validation loop for each fold
         num_epochs = 30

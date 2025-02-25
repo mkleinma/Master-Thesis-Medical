@@ -26,7 +26,7 @@ from torch.utils.data import Dataset, DataLoader
 from torchvision import models, transforms
 from torchvision.transforms import functional as TF
 from torchvision.models import ResNet50_Weights, resnet50
-from PIL import Image
+from PIL import Image           
 import numpy as np
 import csv
 
@@ -273,7 +273,6 @@ with open('results_resnet50_baseline_allLayers_noAug.csv', 'w', newline='') as f
             class_names = ['No Pneumonia', 'Pneumonia']
             cm_figure = plot_confusion_matrix(cm, class_names)
             log_writer.add_figure('Confusion_Matrix', cm_figure, epoch)
-
             
             if (f1 > best_f1):
                 best_f1 = f1

@@ -84,8 +84,8 @@ torch.manual_seed(0)
 csv_path = r"/pfs/work7/workspace/scratch/ma_mkleinma-thesis/rsna-pneumonia-detection-challenge/stage_2_train_labels.csv"
 image_folder = r"/pfs/work7/workspace/scratch/ma_mkleinma-thesis/rsna-pneumonia-detection-challenge/stage_2_train_images"
 splits_path = r"/pfs/work7/workspace/scratch/ma_mkleinma-thesis/training_splits/splits_balanced.pkl"
-cm_output_dir = r"/pfs/work7/workspace/scratch/ma_mkleinma-thesis/trained_models/30_epochs_bcos_transformer_b_16/seed_1/confusion_matrix"
-model_output_dir = r"/pfs/work7/workspace/scratch/ma_mkleinma-thesis/trained_models/30_epochs_bcos_transformer_b_16/seed_1/"
+cm_output_dir = r"/pfs/work7/workspace/scratch/ma_mkleinma-thesis/trained_models/30_epochs_bcos_transformer_conv/seed_0/confusion_matrix"
+model_output_dir = r"/pfs/work7/workspace/scratch/ma_mkleinma-thesis/trained_models/30_epochs_bcos_transformer_conv/seed_0/"
 
 
 
@@ -114,17 +114,15 @@ class PneumoniaDataset(Dataset):
         dicom = pydicom.dcmread(image_path)
         image = dicom.pixel_array
         image = Image.fromarray(image).convert("RGB")
-        tensor_image = TF.to_tensor(image)
-        
+
         if self.transform:
             image = self.transform(image)
 
-        return tensor_image, torch.tensor(label, dtype=torch.long)
+        return image, torch.tensor(label, dtype=torch.long)
 
 
 # Define transformations for the datasets
 transform = transforms.Compose([
-    transforms.Resize((224, 224)),
     transforms.ToTensor(),
     transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])  # Normalize with ImageNet stats
 ])
@@ -161,7 +159,7 @@ with open('results_transformer_bcos_allLayers_noAug.csv', 'w', newline='') as fi
 
         # if we dont start from checkpoint: initialize new model to train
         if not checkpoint_exists or current_fold != start_fold:
-            model = torch.hub.load('B-cos/B-cos-v2', 'simple_vit_b_patch16_224', pretrained=True)
+            model = torch.hub.load('B-cos/B-cos-v2', 'vitc_b_patch1_14', pretrained=True)
             model[0].linear_head.linear = BcosLinear(in_features=768, out_features=2, bias=False, b=2)
             optimizer = optim.Adam(model.parameters(), lr=1e-5) #adjusted to 1e-5 due to transformer
             scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.1, patience=5, verbose=True)
