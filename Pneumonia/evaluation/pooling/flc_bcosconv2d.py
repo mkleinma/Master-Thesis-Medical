@@ -1,5 +1,5 @@
 from .flc_pooling import FLC_Pooling
-from .flc_pooling import FLC_Pooling_NoHW
+#from .flc_pooling import FLC_Pooling_NoHW
 from libraries.bcosconv2d import NormedConv2d
 from libraries.bcosconv2d import BcosConv2d
 
@@ -29,7 +29,7 @@ class ModifiedFLCBcosConv2d(nn.Module):
         return x
 
 
-class ModifiedFLCBcosConv2dNoHW(nn.Module):
+'''class ModifiedFLCBcosConv2dNoHW(nn.Module):
     def __init__(self, in_channels, out_channels, kernel_size, stride, padding=(0, 0), b=2, max_out=1):
         super().__init__()
         # Use BcosConv2d instead of NormedConv2d
@@ -48,4 +48,4 @@ class ModifiedFLCBcosConv2dNoHW(nn.Module):
     def forward(self, x):
         x = self.conv(x)
         x = self.flcpool(x)
-        return x
+        return x'''
