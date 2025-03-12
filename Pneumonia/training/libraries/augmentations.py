@@ -131,6 +131,7 @@ def get_heavy_augmentations_no_rotation_no_resize():
         transforms.Lambda(lambda img: TF.affine(
             img,
             angle=0,  # Rotation: normal distribution (mean=0, std=6)
+            translate=(0,0),
             scale=1.0 / (2 ** random.gauss(0, 0.15)),  # Log-normal scaling
             shear=0
         )),
@@ -138,6 +139,7 @@ def get_heavy_augmentations_no_rotation_no_resize():
         transforms.Lambda(lambda img: transforms.functional.affine(
             img,
             angle=random.gauss(0, 6),  # Rotation: normal distribution (mean=0, std=6)
+            translate=(0,0),
             scale=1.0,  # Log-normal scaling
             shear=random.gauss(0, 4)  # Shear: normal distribution (mean=0, std=4)
         )),
@@ -156,22 +158,24 @@ def get_heavy_augmentations_no_rotation_resize():
         transforms.RandomHorizontalFlip(p=0.5),
         transforms.Lambda(lambda img: TF.affine(
             img,
-            angle=0,
+            angle=0,  # No rotation yet
             translate=(random.uniform(-32, 32), random.uniform(-32, 32)),  # Apply first translation
-            scale=1.0,
-            shear=0 
+            scale=1.0,  # No scaling yet
+            shear=0  # No shear yet
         )),
         
         transforms.Lambda(lambda img: TF.affine(
             img,
             angle=0,  # Rotation: normal distribution (mean=0, std=6)
+            translate=(0,0),
             scale=1.0 / (2 ** random.gauss(0, 0.15)),  # Log-normal scaling
             shear=0
         )),
 
-        transforms.Lambda(lambda img: TF.affine(
+        transforms.Lambda(lambda img: transforms.functional.affine(
             img,
             angle=random.gauss(0, 6),  # Rotation: normal distribution (mean=0, std=6)
+            translate=(0,0),
             scale=1.0,  # Log-normal scaling
             shear=random.gauss(0, 4)  # Shear: normal distribution (mean=0, std=4)
         )),

@@ -23,7 +23,7 @@ from torchvision.models import ResNet50_Weights, resnet50
 from PIL import Image
 import numpy as np
 import csv
-
+from torch.utils.data import WeightedRandomSampler
 
 from libraries.bcosconv2d import NormedConv2d
 from libraries import augmentations
@@ -33,11 +33,10 @@ from libraries import augmentations
 parser = argparse.ArgumentParser()
 parser.add_argument("--seed", type=int, required=True, help="Random seed for training")
 parser.add_argument("--augmentation", type=str, choices=["no", "light", "heavy"], required=True, help="Type of augmentation")
+parser.add_argument("--sampling", type=lambda x: x.lower() == "true", default=False, help="Enable sampling (True/False)")
 args = parser.parse_args()
 
-
-
-## assisting script
+## assisting script ##
 def plot_confusion_matrix(cm, class_names):
     fig, ax = plt.subplots(figsize=(8, 8))
     sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', xticklabels=class_names, yticklabels=class_names)
@@ -91,13 +90,15 @@ def find_latest_checkpoint(model_output_dir):
 np.random.seed(args.seed)
 random.seed(args.seed)
 torch.manual_seed(args.seed)
-
-
+samp_text = "nosamp"
+if args.sampling:
+    samp_text = "oversamp"
+    
 # Paths
-csv_path = r"/pfs/work7/workspace/scratch/ma_mkleinma-thesis/rsna-pneumonia-detection-challenge/stage_2_train_labels.csv"
+csv_path = r"/pfs/work7/workspace/scratch/ma_mkleinma-thesis/training_splits/grouped_data.csv"
 image_folder = r"/pfs/work7/workspace/scratch/ma_mkleinma-thesis/rsna-pneumonia-detection-challenge/stage_2_train_images"
-splits_path = r"/pfs/work7/workspace/scratch/ma_mkleinma-thesis/training_splits/splits_balanced.pkl"
-model_output_dir = f"/pfs/work7/workspace/scratch/ma_mkleinma-thesis/trained_models/30_epochs_bcos_resnet50_dehb_{args.augmentation}/seed_{args.seed}"
+splits_path = r"/pfs/work7/workspace/scratch/ma_mkleinma-thesis/training_splits/splits_balanced_fix.pkl"
+model_output_dir = f"/pfs/work7/workspace/scratch/ma_mkleinma-thesis/trained_models/30_epochs_bcos_resnet50_dehb_{args.augmentation}_{samp_text}/seed_{args.seed}"
 cm_output_dir = os.path.join(model_output_dir, "confusion_matrix")
 
 
@@ -137,13 +138,16 @@ class PneumoniaDataset(Dataset):
         return image, torch.tensor(label, dtype=torch.long)
 
 
+
 # Define transformations for the datasets
 if args.augmentation == "no":
     transform = augmentations.get_no_augmentations_no_resize()
 elif args.augmentation == "light":
     transform = augmentations.get_light_augmentations_no_resize()
 elif args.augmentation == "heavy":
-    transform = augmentations.get_heavy_augmentations_no_resize()
+    transform = augmentations.get_heavy_augmentations_no_rotation_no_resize()
+
+
 
 fold = 0
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -191,7 +195,14 @@ for current_fold, (train_idx, val_idx) in enumerate(splits):
     train_dataset = PneumoniaDataset(train_data, image_folder, transform=transform)
     val_dataset = PneumoniaDataset(val_data, image_folder, transform=transform)
 
-    train_loader = DataLoader(train_dataset, batch_size=16, shuffle=True)
+    if args.sampling:  
+        class_counts = train_data["Target"].value_counts().to_dict()
+        class_weights = {label: 1.0 / count for label, count in class_counts.items()}  # Inverse frequency
+        sample_weights = train_data["Target"].map(class_weights).values
+        sampler = WeightedRandomSampler(sample_weights, len(sample_weights), replacement=True)
+        train_loader = DataLoader(train_dataset, batch_size=16, sampler=sampler)  
+    else:
+        train_loader = DataLoader(train_dataset, batch_size=16, shuffle=True)  
     val_loader = DataLoader(val_dataset, batch_size=16, shuffle=False)
             
     # Train for the current fold
@@ -289,12 +300,12 @@ for current_fold, (train_idx, val_idx) in enumerate(splits):
         f1 = f1_score(all_labels, all_preds)
         auc = roc_auc_score(all_labels, all_probs)
         
-        log_writer.add_scalar('Loss/Validation', val_loss, epoch)
-        log_writer.add_scalar('Accuracy/Validation', val_accuracy, epoch)
-        log_writer.add_scalar('Metrics/Precision', precision, epoch)
-        log_writer.add_scalar('Metrics/Recall', recall, epoch)
-        log_writer.add_scalar('Metrics/F1', f1, epoch)
-        log_writer.add_scalar('Metrics/AUC', auc, epoch)
+        log_writer.add_scalar('Loss/Validation', val_loss, epoch+1)
+        log_writer.add_scalar('Accuracy/Validation', val_accuracy, epoch+1)
+        log_writer.add_scalar('Metrics/Precision', precision, epoch+1)
+        log_writer.add_scalar('Metrics/Recall', recall, epoch+1)
+        log_writer.add_scalar('Metrics/F1', f1, epoch+1)
+        log_writer.add_scalar('Metrics/AUC', auc, epoch+1)
         
         current_lr = optimizer.param_groups[0]['lr']
         log_writer.add_scalar('Learning_Rate', current_lr, epoch)
@@ -307,8 +318,9 @@ for current_fold, (train_idx, val_idx) in enumerate(splits):
         
         if (f1 > best_f1):
             best_f1 = f1
-            torch.save(model.state_dict(), os.path.join(model_output_dir, f"pneumonia_detection_model_resnet_bcos_bestf1_{fold}_{epoch}.pth"))
-            cm_file_path = os.path.join(cm_output_dir, f"confusion_matrix_best_f1_{fold}_{epoch}.json")
+            epoch_name = epoch+1
+            torch.save(model.state_dict(), os.path.join(model_output_dir, f"pneumonia_detection_model_resnet_bcos_bestf1_{fold}_{epoch_name}.pth"))
+            cm_file_path = os.path.join(cm_output_dir, f"confusion_matrix_best_f1_{fold}.json")
             with open(cm_file_path, 'w') as cm_file:
                 json.dump({'confusion_matrix': cm.tolist()}, cm_file, indent=4)
             print(f"Confusion Matrix for Fold {fold} saved at {cm_file_path}")

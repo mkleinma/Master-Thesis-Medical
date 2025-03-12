@@ -37,9 +37,9 @@ random.seed(0)
 torch.manual_seed(0)
 
 # Paths
-csv_path = r"/pfs/work7/workspace/scratch/ma_mkleinma-thesis/rsna-pneumonia-detection-challenge/stage_2_train_labels.csv"
+csv_path = r"/pfs/work7/workspace/scratch/ma_mkleinma-thesis/training_splits/grouped_data.csv"
 image_folder = r"/pfs/work7/workspace/scratch/ma_mkleinma-thesis/rsna-pneumonia-detection-challenge/stage_2_train_images"
-splits_path = r"/pfs/work7/workspace/scratch/ma_mkleinma-thesis/training_splits/splits_balanced.pkl"
+splits_path = r"/pfs/work7/workspace/scratch/ma_mkleinma-thesis/training_splits/splits_balanced_fix.pkl"
 
 # Load data and splits
 data = pd.read_csv(csv_path)
@@ -324,7 +324,7 @@ de = DEHB(f=train_model,
     max_fidelity=5, # number of epochs to run it for
     output_path="/pfs/work7/workspace/scratch/ma_mkleinma-thesis/dehb_results",
     n_workers=1)
-incumbent = de.run(fevals=10, runtime=86400)  # Stop after 1 day 
+incumbent = de.run(fevals=10, runtime=86400)
 
 print(incumbent)
 

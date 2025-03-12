@@ -91,7 +91,7 @@ torch.manual_seed(0)
 #cm_output_dir = r"/home/mkleinma/trained_models/30_epochs_bcos_flc/seed_0_differentScheduler/confusion_matrix"
 #model_output_dir = r"/home/mkleinma/trained_models/30_epochs_bcos_flc/seed_0_differentScheduler/"
 
-csv_path = r"/pfs/work7/workspace/scratch/ma_mkleinma-thesis/rsna-pneumonia-detection-challenge/stage_2_train_labels.csv"
+csv_path = r"/pfs/work7/workspace/scratch/ma_mkleinma-thesis/training_splits/grouped_data.csv"
 image_folder = r"/pfs/work7/workspace/scratch/ma_mkleinma-thesis/rsna-pneumonia-detection-challenge/stage_2_train_images"
 splits_path = r"/pfs/work7/workspace/scratch/ma_mkleinma-thesis/training_splits/splits_balanced.pkl"
 cm_output_dir = r"/pfs/work7/workspace/scratch/ma_mkleinma-thesis/trained_models/30_epochs_bcos_resnet50_flc/seed_0/confusion_matrix"
@@ -252,8 +252,8 @@ for current_fold, (train_idx, val_idx) in enumerate(splits):
         train_loss = running_loss / len(train_loader.dataset)
         train_accuracy = correct / total
             
-        log_writer.add_scalar('Loss/Train', train_loss, epoch)
-        log_writer.add_scalar('Accuracy/Train', train_accuracy, epoch)
+        log_writer.add_scalar('Loss/Train', train_loss, epoch+1)
+        log_writer.add_scalar('Accuracy/Train', train_accuracy, epoch+1)
 
 
         print(f"Training Accuracy: {train_accuracy:.4f}")
@@ -301,26 +301,26 @@ for current_fold, (train_idx, val_idx) in enumerate(splits):
         f1 = f1_score(all_labels, all_preds)
         auc = roc_auc_score(all_labels, all_probs)
             
-        log_writer.add_scalar('Loss/Validation', val_loss, epoch)
-        log_writer.add_scalar('Accuracy/Validation', val_accuracy, epoch)
-        log_writer.add_scalar('Metrics/Precision', precision, epoch)
-        log_writer.add_scalar('Metrics/Recall', recall, epoch)
-        log_writer.add_scalar('Metrics/F1', f1, epoch)
-        log_writer.add_scalar('Metrics/AUC', auc, epoch)
+        log_writer.add_scalar('Loss/Validation', val_loss, epoch+1)
+        log_writer.add_scalar('Accuracy/Validation', val_accuracy, epoch+1)
+        log_writer.add_scalar('Metrics/Precision', precision, epoch+1)
+        log_writer.add_scalar('Metrics/Recall', recall, epoch+1)
+        log_writer.add_scalar('Metrics/F1', f1, epoch+1)
+        log_writer.add_scalar('Metrics/AUC', auc, epoch+1)
             
         current_lr = optimizer.param_groups[0]['lr']
-        log_writer.add_scalar('Learning_Rate', current_lr, epoch)
+        log_writer.add_scalar('Learning_Rate', current_lr, epoch+1)
             
         cm = confusion_matrix(all_labels, all_preds)
         class_names = ['No Pneumonia', 'Pneumonia']
         cm_figure = plot_confusion_matrix(cm, class_names)
-        log_writer.add_figure('Confusion_Matrix', cm_figure, epoch)
+        log_writer.add_figure('Confusion_Matrix', cm_figure, epoch+1)
 
             
         if (f1 > best_f1):
             best_f1 = f1
-            torch.save(model.state_dict(), os.path.join(model_output_dir, f"pneumonia_detection_model_bcos_trans_bestf1_{fold}_{epoch}.pth"))
-            cm_file_path = os.path.join(cm_output_dir, f"confusion_matrix_best_f1_{fold}_{epoch}.json")
+            torch.save(model.state_dict(), os.path.join(model_output_dir, f"pneumonia_detection_model_bcos_trans_bestf1_{fold}.pth"))
+            cm_file_path = os.path.join(cm_output_dir, f"confusion_matrix_best_f1_{fold}.json")
             with open(cm_file_path, 'w') as cm_file:
                 json.dump({'confusion_matrix': cm.tolist()}, cm_file, indent=4)
             print(f"Confusion Matrix for Fold {fold} saved at {cm_file_path}")

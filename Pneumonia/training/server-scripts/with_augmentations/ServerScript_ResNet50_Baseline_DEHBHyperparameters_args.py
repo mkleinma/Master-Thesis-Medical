@@ -1,3 +1,4 @@
+import argparse
 import json
 import seaborn as sns
 import matplotlib
@@ -22,9 +23,19 @@ from torchvision.models import ResNet50_Weights, resnet50
 from PIL import Image
 import numpy as np
 import csv
+from torch.utils.data import WeightedRandomSampler
 
 from libraries.bcosconv2d import NormedConv2d
-from pooling.flc_bcosconv2d import ModifiedFLCBcosConv2d
+from libraries import augmentations
+
+parser = argparse.ArgumentParser()
+parser.add_argument("--seed", type=int, required=True, help="Random seed for training")
+parser.add_argument("--augmentation", type=str, choices=["no", "light", "heavy"], required=True, help="Augmentation Type")
+parser.add_argument("--sampling", type=lambda x: x.lower() == "true", default=False, help="Enable sampling (True/False)")
+
+
+args = parser.parse_args()
+
 
 
 ## assisting script
@@ -78,24 +89,24 @@ def find_latest_checkpoint(model_output_dir):
 
 
 # Set random seeds for reproducibility
-np.random.seed(0)
-random.seed(0)
-torch.manual_seed(0)
-
-
+np.random.seed(args.seed)
+random.seed(args.seed)
+torch.manual_seed(args.seed)
+samp_text = "nosamp"
+if args.sampling:
+    samp_text = "oversamp"
+    
 # Paths
-
-#csv_path = r"/home/mkleinma/rsna-pneumonia-detection-challenge/stage_2_train_labels.csv"
-#image_folder = r"/home/mkleinma/rsna-pneumonia-detection-challenge/stage_2_train_images"
-#splits_path = r"/home/mkleinma/training_splits/splits_balanced.pkl"
-#cm_output_dir = r"/home/mkleinma/trained_models/30_epochs_bcos_flc/seed_0_differentScheduler/confusion_matrix"
-#model_output_dir = r"/home/mkleinma/trained_models/30_epochs_bcos_flc/seed_0_differentScheduler/"
-
-csv_path = r"/pfs/work7/workspace/scratch/ma_mkleinma-thesis/rsna-pneumonia-detection-challenge/stage_2_train_labels.csv"
+csv_path = r"/pfs/work7/workspace/scratch/ma_mkleinma-thesis/training_splits/grouped_data.csv"
 image_folder = r"/pfs/work7/workspace/scratch/ma_mkleinma-thesis/rsna-pneumonia-detection-challenge/stage_2_train_images"
-splits_path = r"/pfs/work7/workspace/scratch/ma_mkleinma-thesis/training_splits/splits_balanced.pkl"
-cm_output_dir = r"/pfs/work7/workspace/scratch/ma_mkleinma-thesis/trained_models/30_epochs_bcos_resnet50_flc/seed_0/confusion_matrix"
-model_output_dir = r"/pfs/work7/workspace/scratch/ma_mkleinma-thesis/trained_models/30_epochs_bcos_resnet50_flc/seed_0/"
+splits_path = r"/pfs/work7/workspace/scratch/ma_mkleinma-thesis/training_splits/splits_balanced_fix.pkl"
+model_output_dir = f"/pfs/work7/workspace/scratch/ma_mkleinma-thesis/trained_models/30_epochs_baseline_resnet50_dehb_{args.augmentation}_{samp_text}/seed_{args.seed}"
+cm_output_dir = os.path.join(model_output_dir, "confusion_matrix")
+
+
+# to make sure there is no issue when paths dont exist
+os.makedirs(model_output_dir, exist_ok=True)
+os.makedirs(cm_output_dir, exist_ok=True)
 
 # Load data and splits
 data = pd.read_csv(csv_path)
@@ -122,74 +133,61 @@ class PneumoniaDataset(Dataset):
         dicom = pydicom.dcmread(image_path)
         image = dicom.pixel_array
         image = Image.fromarray(image).convert("RGB")
-                
+        
         if self.transform:
             image = self.transform(image)
 
         return image, torch.tensor(label, dtype=torch.long)
 
-# Define transformations for the datasets
-transform = transforms.Compose([
-    transforms.ToTensor(),
-    transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])  # Normalize with ImageNet stats
-])
+
+
+# Define transformations for the datasets --- resize for baselines as model.transform else resizes
+if args.augmentation == "no":
+    transform = augmentations.get_no_augmentations_resize()
+elif args.augmentation == "light":
+    transform = augmentations.get_light_augmentations_resize()
+elif args.augmentation == "heavy":
+    transform = augmentations.get_heavy_augmentations_no_rotation_resize()
+
+
 
 fold = 0
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-  
-model = torch.hub.load('B-cos/B-cos-v2', 'resnet50', pretrained=True)
 
-model.layer2[0].conv2 = ModifiedFLCBcosConv2d(128, 128, kernel_size=(3, 3), stride=(2, 2), padding=(1, 1), b=2, transpose=True)
-model.layer2[0].downsample[0] = ModifiedFLCBcosConv2d(256, 512, kernel_size=(1, 1), stride=(2, 2), b=2, transpose=False)
+# Training loop
+model = models.resnet50(weights=ResNet50_Weights.IMAGENET1K_V1)
+model.fc = nn.Linear(model.fc.in_features, 2)  # Binary classification
 
-model.layer3[0].conv2 = ModifiedFLCBcosConv2d(256, 256, kernel_size=(3, 3), stride=(2, 2), padding=(1, 1), b=2, transpose=True)
-model.layer3[0].downsample[0] = ModifiedFLCBcosConv2d(512, 1024, kernel_size=(1, 1), stride=(2, 2), b=2, transpose=False)
-
-model.layer4[0].conv2 = ModifiedFLCBcosConv2d(512, 512, kernel_size=(3, 3), stride=(2, 2), padding=(1, 1), b=2, transpose=True)
-model.layer4[0].downsample[0] = ModifiedFLCBcosConv2d(1024, 2048, kernel_size=(1, 1), stride=(2, 2), b=2, transpose=False)    
-model.fc.linear = NormedConv2d(2048, 2, kernel_size=(1, 1), stride=(1, 1), bias=False) # code from B-cos paper reused to adjust network
-
-    
 criterion = nn.CrossEntropyLoss()
-optimizer = optim.Adam(model.parameters(), lr=1e-4)
-scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=30, eta_min=0)
+optimizer = optim.Adam(model.parameters(), lr=0.0001, weight_decay=1e-05)
+scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.1, patience=3, verbose=True)
 start_epoch, start_fold, best_f1, checkpoint_exists = 0, 0, 0.0, False
-    
+
 # we check for latest checkpoint and if it exists, then we load the checkpoint and start from there - else we start from 0 and it does not exist
 latest_checkpoint_path, latest_fold = find_latest_checkpoint(model_output_dir)
 if latest_checkpoint_path:
     start_epoch, start_fold, best_f1, checkpoint_exists = load_checkpoint(
         latest_checkpoint_path, model, optimizer, scheduler)
-    
+
 for current_fold, (train_idx, val_idx) in enumerate(splits):
     fold = current_fold + 1
     print(f"Training fold {fold}...")
-        
+    
     if checkpoint_exists and fold < start_fold:
         print(f"Skipping fold {current_fold} as it's already completed.")
         continue  # Skip completed folds
-        
-        # if we dont start from checkpoint: initialize new model to train
+            
+    # if we dont start from checkpoint: initialize new model to train
     if not checkpoint_exists or current_fold != start_fold:
-        best_f1 = 0.0 # reset it after each fold
-        model = torch.hub.load('B-cos/B-cos-v2', 'resnet50', pretrained=True)
-
-        model.layer2[0].conv2 = ModifiedFLCBcosConv2d(128, 128, kernel_size=(3, 3), stride=(2, 2), padding=(1, 1), b=2, transpose=True)
-        model.layer2[0].downsample[0] = ModifiedFLCBcosConv2d(256, 512, kernel_size=(1, 1), stride=(2, 2), b=2, transpose=False)
-
-        model.layer3[0].conv2 = ModifiedFLCBcosConv2d(256, 256, kernel_size=(3, 3), stride=(2, 2), padding=(1, 1), b=2, transpose=True)
-        model.layer3[0].downsample[0] = ModifiedFLCBcosConv2d(512, 1024, kernel_size=(1, 1), stride=(2, 2), b=2, transpose=False)
-
-        model.layer4[0].conv2 = ModifiedFLCBcosConv2d(512, 512, kernel_size=(3, 3), stride=(2, 2), padding=(1, 1), b=2, transpose=True)
-        model.layer4[0].downsample[0] = ModifiedFLCBcosConv2d(1024, 2048, kernel_size=(1, 1), stride=(2, 2), b=2, transpose=False)        
-        model.fc.linear = NormedConv2d(2048, 2, kernel_size=(1, 1), stride=(1, 1), bias=False) # code from B-cos paper reused to adjust network
-
-        optimizer = optim.Adam(model.parameters(), lr=1e-4)
-        scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=30, eta_min=0)
+        best_f1 = 0.0
+        model = models.resnet50(weights=ResNet50_Weights.IMAGENET1K_V1)
+        model.fc = nn.Linear(model.fc.in_features, 2)  # Binary classification
+        optimizer = optim.Adam(model.parameters(), lr=0.0001, weight_decay=1e-05)
+        scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.1, patience=3, verbose=True)
         model = model.to(device)
         checkpoint_exists = False
 
-    
+
     log_dir = os.path.join(model_output_dir, f"tensorboard_logs_fold_{fold}")
     log_writer = SummaryWriter(log_dir=log_dir)
 
@@ -200,41 +198,38 @@ for current_fold, (train_idx, val_idx) in enumerate(splits):
     train_dataset = PneumoniaDataset(train_data, image_folder, transform=transform)
     val_dataset = PneumoniaDataset(val_data, image_folder, transform=transform)
 
-    train_loader = DataLoader(train_dataset, batch_size=16, shuffle=True)
+    if args.sampling:  
+        class_counts = train_data["Target"].value_counts().to_dict()
+        class_weights = {label: 1.0 / count for label, count in class_counts.items()}  # Inverse frequency
+        sample_weights = train_data["Target"].map(class_weights).values
+        sampler = WeightedRandomSampler(sample_weights, len(sample_weights), replacement=True)
+        train_loader = DataLoader(train_dataset, batch_size=16, sampler=sampler)  
+    else:
+        train_loader = DataLoader(train_dataset, batch_size=16, shuffle=True)  
     val_loader = DataLoader(val_dataset, batch_size=16, shuffle=False)
-                
-     # Train for the current fold
+            
+    # Train for the current fold
     num_epochs = 30
     for epoch in range(num_epochs):
         model.train()
         running_loss = 0.0
         correct = 0
         total = 0
-            
+        
         if (epoch < start_epoch and start_epoch < num_epochs):
             print(f"Skipping epoch {epoch}, resuming from checkpoint at epoch {start_epoch}.")
             continue
-        
+
         if fold == start_fold:
             checkpoint_exists = False 
             start_epoch = 0
 
-
         for images, labels in train_loader:
-            labels = labels.to(device)
-    
-            six_channel_images = []
-            # create model.transform images
-            for img_tensor in images:
-                numpy_image = (img_tensor.permute(1, 2, 0).cpu().numpy() * 255).astype(np.uint8)
-                pil_image = Image.fromarray(numpy_image)
-                transformed_image = model.transform(pil_image)
-                six_channel_images.append(transformed_image)
-                
-            six_channel_images = torch.stack(six_channel_images).to(device)
-                
+            images, labels = images.to(device), labels.to(device)
+            
+            
             # Forward pass
-            outputs = model(six_channel_images)
+            outputs = model(images)
             loss = criterion(outputs, labels)
 
             # Backward pass and optimization
@@ -249,7 +244,7 @@ for current_fold, (train_idx, val_idx) in enumerate(splits):
 
         train_loss = running_loss / len(train_loader.dataset)
         train_accuracy = correct / total
-            
+        
         log_writer.add_scalar('Loss/Train', train_loss, epoch)
         log_writer.add_scalar('Accuracy/Train', train_accuracy, epoch)
 
@@ -268,16 +263,8 @@ for current_fold, (train_idx, val_idx) in enumerate(splits):
 
         with torch.no_grad():
             for images, labels in val_loader:
-                labels = labels.to(device)
-                six_channel_images = []
-                for img_tensor in images:
-                    numpy_image = (img_tensor.permute(1, 2, 0).cpu().numpy() * 255).astype(np.uint8)
-                    pil_image = Image.fromarray(numpy_image)
-                    transformed_image = model.transform(pil_image)
-                    six_channel_images.append(transformed_image)
-                      
-                six_channel_images = torch.stack(six_channel_images).to(device)
-                outputs = model(six_channel_images)
+                images, labels = images.to(device), labels.to(device)
+                outputs = model(images)
                 loss = criterion(outputs, labels)
 
                 val_loss += loss.item() * images.size(0)
@@ -286,39 +273,39 @@ for current_fold, (train_idx, val_idx) in enumerate(splits):
                 all_probs.extend(torch.softmax(outputs, dim=1)[:, 1].cpu().numpy().flatten())
                 all_preds.extend(preds.cpu().numpy().flatten())
                 all_labels.extend(labels.cpu().numpy().flatten())
-                    
+                
                 val_correct += (preds == labels).sum().item()
                 val_total += labels.size(0)
 
         val_loss /= len(val_loader.dataset)
         val_accuracy = val_correct / val_total
         scheduler.step(val_loss)
-            
+        
         precision = precision_score(all_labels, all_preds)
         recall = recall_score(all_labels, all_preds)
         f1 = f1_score(all_labels, all_preds)
         auc = roc_auc_score(all_labels, all_probs)
-            
-        log_writer.add_scalar('Loss/Validation', val_loss, epoch)
-        log_writer.add_scalar('Accuracy/Validation', val_accuracy, epoch)
-        log_writer.add_scalar('Metrics/Precision', precision, epoch)
-        log_writer.add_scalar('Metrics/Recall', recall, epoch)
-        log_writer.add_scalar('Metrics/F1', f1, epoch)
-        log_writer.add_scalar('Metrics/AUC', auc, epoch)
-            
+        
+        log_writer.add_scalar('Loss/Validation', val_loss, epoch+1)
+        log_writer.add_scalar('Accuracy/Validation', val_accuracy, epoch+1)
+        log_writer.add_scalar('Metrics/Precision', precision, epoch+1)
+        log_writer.add_scalar('Metrics/Recall', recall, epoch+1)
+        log_writer.add_scalar('Metrics/F1', f1, epoch+1)
+        log_writer.add_scalar('Metrics/AUC', auc, epoch+1)
+        
         current_lr = optimizer.param_groups[0]['lr']
         log_writer.add_scalar('Learning_Rate', current_lr, epoch)
-            
+        
         cm = confusion_matrix(all_labels, all_preds)
         class_names = ['No Pneumonia', 'Pneumonia']
         cm_figure = plot_confusion_matrix(cm, class_names)
         log_writer.add_figure('Confusion_Matrix', cm_figure, epoch)
 
-            
+        
         if (f1 > best_f1):
             best_f1 = f1
-            torch.save(model.state_dict(), os.path.join(model_output_dir, f"pneumonia_detection_model_bcos_trans_bestf1_{fold}_{epoch}.pth"))
-            cm_file_path = os.path.join(cm_output_dir, f"confusion_matrix_best_f1_{fold}_{epoch}.json")
+            torch.save(model.state_dict(), os.path.join(model_output_dir, f"pneumonia_detection_model_resnet_baseline_bestf1_{fold}.pth"))
+            cm_file_path = os.path.join(cm_output_dir, f"confusion_matrix_best_f1_{fold}.json")
             with open(cm_file_path, 'w') as cm_file:
                 json.dump({'confusion_matrix': cm.tolist()}, cm_file, indent=4)
             print(f"Confusion Matrix for Fold {fold} saved at {cm_file_path}")
@@ -329,17 +316,20 @@ for current_fold, (train_idx, val_idx) in enumerate(splits):
             with open(cm_file_path, 'w') as cm_file:
                 json.dump({'confusion_matrix': cm.tolist()}, cm_file, indent=4)
             print(f"Confusion Matrix for Fold {fold} saved at {cm_file_path}")
-                
-            save_checkpoint_path = os.path.join(model_output_dir, f"checkpoint_fold_{fold}.pth")
-            save_checkpoint(model, optimizer, scheduler, epoch, fold, save_checkpoint_path, best_f1)
+            
+        save_checkpoint_path = os.path.join(model_output_dir, f"checkpoint_fold_{fold}.pth")
+        save_checkpoint(model, optimizer, scheduler, epoch, fold, save_checkpoint_path, best_f1)
 
-            print(f"Fold {fold}, Epoch {epoch + 1}/{num_epochs}, "
-                  f"Val Acc: {val_accuracy:.4f}, Precision: {precision:.4f}, "
-                  f"Recall: {recall:.4f}, F1: {f1:.4f}, AUC: {auc:.4f}")
+        print(f"Fold {fold}, Epoch {epoch + 1}/{num_epochs}, "
+                f"Val Acc: {val_accuracy:.4f}, Precision: {precision:.4f}, "
+                f"Recall: {recall:.4f}, F1: {f1:.4f}, AUC: {auc:.4f}")
 
-        print(f"Finished training fold {fold}.\n")
-        
+    print(f"Finished training fold {fold}.\n")
+    
     # Save the final model
-    model_path = f"pneumonia_detection_model_fold_{fold}_resnet_bcos.pth"
+    model_path = f"pneumonia_detection_model_fold_{fold}_resnet_baseline.pth"
     torch.save(model.state_dict(), os.path.join(model_output_dir, model_path))
     log_writer.close()
+
+
+
