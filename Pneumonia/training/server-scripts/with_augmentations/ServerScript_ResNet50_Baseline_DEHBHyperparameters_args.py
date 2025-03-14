@@ -100,7 +100,7 @@ if args.sampling:
 csv_path = r"/pfs/work7/workspace/scratch/ma_mkleinma-thesis/training_splits/grouped_data.csv"
 image_folder = r"/pfs/work7/workspace/scratch/ma_mkleinma-thesis/rsna-pneumonia-detection-challenge/stage_2_train_images"
 splits_path = r"/pfs/work7/workspace/scratch/ma_mkleinma-thesis/training_splits/splits_balanced_fix.pkl"
-model_output_dir = f"/pfs/work7/workspace/scratch/ma_mkleinma-thesis/trained_models/30_epochs_baseline_resnet50_dehb_{args.augmentation}_{samp_text}/seed_{args.seed}"
+model_output_dir = f"/pfs/work7/workspace/scratch/ma_mkleinma-thesis/trained_models/30_baseline_resnet50_dehb_{args.augmentation}_{samp_text}/seed_{args.seed}"
 cm_output_dir = os.path.join(model_output_dir, "confusion_matrix")
 
 
@@ -149,6 +149,7 @@ elif args.augmentation == "light":
 elif args.augmentation == "heavy":
     transform = augmentations.get_heavy_augmentations_no_rotation_resize()
 
+transform_val = augmentations.get_no_augmentations_resize()
 
 
 fold = 0
@@ -196,7 +197,7 @@ for current_fold, (train_idx, val_idx) in enumerate(splits):
     val_data = data.iloc[val_idx]
 
     train_dataset = PneumoniaDataset(train_data, image_folder, transform=transform)
-    val_dataset = PneumoniaDataset(val_data, image_folder, transform=transform)
+    val_dataset = PneumoniaDataset(val_data, image_folder, transform=transform_val)
 
     if args.sampling:  
         class_counts = train_data["Target"].value_counts().to_dict()

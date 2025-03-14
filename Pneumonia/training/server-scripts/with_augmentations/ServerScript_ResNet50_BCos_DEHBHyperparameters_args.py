@@ -147,7 +147,7 @@ elif args.augmentation == "light":
 elif args.augmentation == "heavy":
     transform = augmentations.get_heavy_augmentations_no_rotation_no_resize()
 
-
+transform_val = augmentations.get_no_augmentations_no_resize()
 
 fold = 0
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -193,7 +193,7 @@ for current_fold, (train_idx, val_idx) in enumerate(splits):
     val_data = data.iloc[val_idx]
 
     train_dataset = PneumoniaDataset(train_data, image_folder, transform=transform)
-    val_dataset = PneumoniaDataset(val_data, image_folder, transform=transform)
+    val_dataset = PneumoniaDataset(val_data, image_folder, transform=transform_val)
 
     if args.sampling:  
         class_counts = train_data["Target"].value_counts().to_dict()
@@ -318,8 +318,7 @@ for current_fold, (train_idx, val_idx) in enumerate(splits):
         
         if (f1 > best_f1):
             best_f1 = f1
-            epoch_name = epoch+1
-            torch.save(model.state_dict(), os.path.join(model_output_dir, f"pneumonia_detection_model_resnet_bcos_bestf1_{fold}_{epoch_name}.pth"))
+            torch.save(model.state_dict(), os.path.join(model_output_dir, f"pneumonia_detection_model_resnet_bcos_bestf1_{fold}.pth"))
             cm_file_path = os.path.join(cm_output_dir, f"confusion_matrix_best_f1_{fold}.json")
             with open(cm_file_path, 'w') as cm_file:
                 json.dump({'confusion_matrix': cm.tolist()}, cm_file, indent=4)
