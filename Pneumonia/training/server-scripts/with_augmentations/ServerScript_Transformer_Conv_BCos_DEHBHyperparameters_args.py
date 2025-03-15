@@ -159,8 +159,8 @@ model = torch.hub.load('B-cos/B-cos-v2', 'vitc_b_patch1_14', pretrained=True)
 model[0].linear_head.linear = BcosLinear(in_features=768, out_features=2, bias=False, b=2)
 
 criterion = nn.CrossEntropyLoss()
-optimizer = optim.Adam(model.parameters(), lr=0.0001, weight_decay=1e-05)
-scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.1, patience=3, verbose=True)
+optimizer = optim.Adam(model.parameters(), lr=1e-5, weight_decay=1e-06)
+scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.1, patience=5, verbose=True)
 start_epoch, start_fold, best_f1, checkpoint_exists = 0, 0, 0.0, False
 
 # we check for latest checkpoint and if it exists, then we load the checkpoint and start from there - else we start from 0 and it does not exist
@@ -205,6 +205,7 @@ for current_fold, (train_idx, val_idx) in enumerate(splits):
         train_loader = DataLoader(train_dataset, batch_size=16, sampler=sampler)  
     else:
         train_loader = DataLoader(train_dataset, batch_size=16, shuffle=True)  
+
     val_loader = DataLoader(val_dataset, batch_size=16, shuffle=False)
             
     # Train for the current fold

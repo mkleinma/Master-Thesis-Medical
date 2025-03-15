@@ -183,7 +183,7 @@ for current_fold, (train_idx, val_idx) in enumerate(splits):
         best_f1 = 0.0
         model = torch.hub.load('B-cos/B-cos-v2', 'standard_vitc_b_patch1_14', pretrained=True)        
         model.linear_head.linear = torch.nn.Linear(in_features=768, out_features=2, bias=True)    
-        optimizer = optim.Adam(model.parameters(), lr=0.0001, weight_decay=1e-05)
+        optimizer = optim.Adam(model.parameters(), lr=1e-05, weight_decay=0)
         scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.1, patience=3, verbose=True)
         model = model.to(device)
         checkpoint_exists = False

@@ -160,7 +160,7 @@ model = models.resnet50(weights=ResNet50_Weights.IMAGENET1K_V1)
 model.fc = nn.Linear(model.fc.in_features, 2)  # Binary classification
 
 criterion = nn.CrossEntropyLoss()
-optimizer = optim.Adam(model.parameters(), lr=0.0001, weight_decay=1e-05)
+optimizer = optim.Adam(model.parameters(), lr=0.0001, weight_decay=0.001)
 scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.1, patience=3, verbose=True)
 start_epoch, start_fold, best_f1, checkpoint_exists = 0, 0, 0.0, False
 
@@ -183,7 +183,7 @@ for current_fold, (train_idx, val_idx) in enumerate(splits):
         best_f1 = 0.0
         model = models.resnet50(weights=ResNet50_Weights.IMAGENET1K_V1)
         model.fc = nn.Linear(model.fc.in_features, 2)  # Binary classification
-        optimizer = optim.Adam(model.parameters(), lr=0.0001, weight_decay=1e-05)
+        optimizer = optim.Adam(model.parameters(), lr=0.0001, weight_decay=0.0001)
         scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.1, patience=3, verbose=True)
         model = model.to(device)
         checkpoint_exists = False

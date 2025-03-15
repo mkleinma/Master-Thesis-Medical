@@ -157,7 +157,7 @@ model = torch.hub.load('B-cos/B-cos-v2', 'resnet50', pretrained=True)
 model.fc.linear = NormedConv2d(2048, 2, kernel_size=(1, 1), stride=(1, 1), bias=False) # code from B-cos paper reused to adjust network
 
 criterion = nn.CrossEntropyLoss()
-optimizer = optim.Adam(model.parameters(), lr=0.0001, weight_decay=1e-05)
+optimizer = optim.Adam(model.parameters(), lr=1e-05, weight_decay=0.001)
 scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.1, patience=3, verbose=True)
 start_epoch, start_fold, best_f1, checkpoint_exists = 0, 0, 0.0, False
 
