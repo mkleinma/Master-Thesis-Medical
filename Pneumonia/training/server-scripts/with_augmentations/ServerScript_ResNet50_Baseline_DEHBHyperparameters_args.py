@@ -36,8 +36,6 @@ parser.add_argument("--sampling", type=lambda x: x.lower() == "true", default=Fa
 
 args = parser.parse_args()
 
-
-
 ## assisting script
 def plot_confusion_matrix(cm, class_names):
     fig, ax = plt.subplots(figsize=(8, 8))
@@ -47,15 +45,15 @@ def plot_confusion_matrix(cm, class_names):
     return fig
 
 
-def save_checkpoint(model, optimizer, scheduler, epoch, fold, path, best_f1):
+def save_checkpoint(model, optimizer, scheduler, epoch, fold, path, best_f1, best_recall):
     checkpoint = {
         'model_state_dict': model.state_dict(),
         'optimizer_state_dict': optimizer.state_dict(),
         'scheduler_state_dict': scheduler.state_dict(),
         'epoch': epoch,
         'fold': fold,
-        'best_f1': best_f1
-
+        'best_f1': best_f1,
+        'best_recall' : best_recall
     }
     torch.save(checkpoint, path)
     print(f"Checkpoint saved at {path}")
@@ -70,9 +68,10 @@ def load_checkpoint(path, model, optimizer, scheduler):
         start_epoch = checkpoint['epoch'] + 1
         fold = checkpoint['fold']  # Load the last completed fold
         best_f1 = checkpoint['best_f1']
+        best_recall = checkpoint['best_recall']
         print(f"Checkpoint loaded from {path}")
-        return start_epoch, fold, best_f1, True
-    return 0, 0, 0.0, False
+        return start_epoch, fold, best_f1, best_recall, True
+    return 0, 0, 0.0, 0.0, False
 
 def find_latest_checkpoint(model_output_dir):
     """
@@ -162,12 +161,12 @@ model.fc = nn.Linear(model.fc.in_features, 2)  # Binary classification
 criterion = nn.CrossEntropyLoss()
 optimizer = optim.Adam(model.parameters(), lr=0.0001, weight_decay=0.001)
 scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.1, patience=3, verbose=True)
-start_epoch, start_fold, best_f1, checkpoint_exists = 0, 0, 0.0, False
+start_epoch, start_fold, best_f1, best_recall, checkpoint_exists = 0, 0, 0.0, 0.0, False
 
 # we check for latest checkpoint and if it exists, then we load the checkpoint and start from there - else we start from 0 and it does not exist
 latest_checkpoint_path, latest_fold = find_latest_checkpoint(model_output_dir)
 if latest_checkpoint_path:
-    start_epoch, start_fold, best_f1, checkpoint_exists = load_checkpoint(
+    start_epoch, start_fold, best_f1, best_recall, checkpoint_exists = load_checkpoint(
         latest_checkpoint_path, model, optimizer, scheduler)
 
 for current_fold, (train_idx, val_idx) in enumerate(splits):
@@ -181,6 +180,7 @@ for current_fold, (train_idx, val_idx) in enumerate(splits):
     # if we dont start from checkpoint: initialize new model to train
     if not checkpoint_exists or current_fold != start_fold:
         best_f1 = 0.0
+        best_recall = 0.0
         model = models.resnet50(weights=ResNet50_Weights.IMAGENET1K_V1)
         model.fc = nn.Linear(model.fc.in_features, 2)  # Binary classification
         optimizer = optim.Adam(model.parameters(), lr=0.0001, weight_decay=0.0001)
@@ -302,6 +302,15 @@ for current_fold, (train_idx, val_idx) in enumerate(splits):
         cm_figure = plot_confusion_matrix(cm, class_names)
         log_writer.add_figure('Confusion_Matrix', cm_figure, epoch)
 
+
+        if (recall > best_recall):
+            best_recall = recall
+            torch.save(model.state_dict(), os.path.join(model_output_dir, f"pneumonia_detection_model_resnet_baseline_bestrecall_{fold}.pth"))
+            cm_file_path = os.path.join(cm_output_dir, f"confusion_matrix_best_recall_{fold}.json")
+            with open(cm_file_path, 'w') as cm_file:
+                json.dump({'confusion_matrix': cm.tolist()}, cm_file, indent=4)
+            print(f"Confusion Matrix for Fold {fold} saved at {cm_file_path}")
+
         
         if (f1 > best_f1):
             best_f1 = f1
@@ -319,7 +328,7 @@ for current_fold, (train_idx, val_idx) in enumerate(splits):
             print(f"Confusion Matrix for Fold {fold} saved at {cm_file_path}")
             
         save_checkpoint_path = os.path.join(model_output_dir, f"checkpoint_fold_{fold}.pth")
-        save_checkpoint(model, optimizer, scheduler, epoch, fold, save_checkpoint_path, best_f1)
+        save_checkpoint(model, optimizer, scheduler, epoch, fold, save_checkpoint_path, best_f1, best_recall)
 
         print(f"Fold {fold}, Epoch {epoch + 1}/{num_epochs}, "
                 f"Val Acc: {val_accuracy:.4f}, Precision: {precision:.4f}, "
