@@ -26,11 +26,8 @@ import csv
 from torch.utils.data import WeightedRandomSampler
 
 from libraries.bcosconv2d import NormedConv2d
-from pooling.blur_bcosconv2d import ModifiedBcosConv2d
 from libraries import augmentations
 
-# no aug no light 
-# aug light
 
 
 parser = argparse.ArgumentParser()
@@ -102,7 +99,7 @@ if args.sampling:
 csv_path = r"/pfs/work7/workspace/scratch/ma_mkleinma-thesis/training_splits/grouped_data.csv"
 image_folder = r"/pfs/work7/workspace/scratch/ma_mkleinma-thesis/rsna-pneumonia-detection-challenge/stage_2_train_images"
 splits_path = r"/pfs/work7/workspace/scratch/ma_mkleinma-thesis/training_splits/splits_balanced_fix.pkl"
-model_output_dir = f"/pfs/work7/workspace/scratch/ma_mkleinma-thesis/trained_models/30_epochs_bcos_resnet50_dehb_blur_{args.augmentation}_{samp_text}/seed_{args.seed}"
+model_output_dir = f"/pfs/work7/workspace/scratch/ma_mkleinma-thesis/trained_models/30_epochs_bcos_resnet50_dehb_{args.augmentation}_{samp_text}_nonorm/seed_{args.seed}"
 cm_output_dir = os.path.join(model_output_dir, "confusion_matrix")
 
 
@@ -145,29 +142,49 @@ class PneumoniaDataset(Dataset):
 
 # Define transformations for the datasets
 if args.augmentation == "no":
-    transform = augmentations.get_no_augmentations_no_resize()
+    transform = transforms.Compose([transforms.ToTensor()])
+    
 elif args.augmentation == "light":
-    transform = augmentations.get_light_augmentations_no_resize()
+    transform = transform = transforms.Compose([
+        transforms.Lambda(lambda img: TF.affine(
+            img,
+            angle=0,  # No rotation yet
+            translate=(random.uniform(-32, 32), random.uniform(-32, 32)),  # Apply first translation
+            scale=1.0,  # No scaling yet
+            shear=0  # No shear yet
+        )),
+
+        transforms.Lambda(lambda img: TF.affine(
+            img,
+            angle=0,  # No rotation yet
+            translate=(0, 0),
+            scale=1.0 / (2 ** random.gauss(0, 0.1)),  # Apply correct inverse scaling
+            shear=0  # No shear yet
+        )),
+
+        transforms.Lambda(lambda img: TF.affine(
+            img,
+            angle=random.gauss(0, 5),  # Apply rotation
+            translate=(0, 0),
+            scale=1.0,  # No additional scaling
+            shear=random.gauss(0, 2.5)  # Apply shear after rotation
+        )),
+        transforms.RandomPerspective(distortion_scale=0.1, p=0.5),  # Perspective distortion
+        transforms.Lambda(lambda img: TF.adjust_gamma(img, 2.0 ** random.gauss(0, 0.20))), # as in implementation from them
+        transforms.ToTensor()])
+
 elif args.augmentation == "heavy":
     transform = augmentations.get_heavy_augmentations_no_rotation_no_resize()
 
-transform_val = augmentations.get_no_augmentations_no_resize()
+transform_val = transforms.Compose([
+    transforms.ToTensor()  # Normalize with ImageNet stats
+    ])
 
 fold = 0
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 # Training loop
 model = torch.hub.load('B-cos/B-cos-v2', 'resnet50', pretrained=True)
-
-model.layer2[0].conv2 = ModifiedBcosConv2d(128, 128, kernel_size=(3, 3), stride=(2, 2), padding=(1, 1), b=2)
-model.layer2[0].downsample[0] = ModifiedBcosConv2d(256, 512, kernel_size=(1, 1), stride=(2, 2), b=2)
-
-model.layer3[0].conv2 = ModifiedBcosConv2d(256, 256, kernel_size=(3, 3), stride=(2, 2), padding=(1, 1), b=2)
-model.layer3[0].downsample[0] = ModifiedBcosConv2d(512, 1024, kernel_size=(1, 1), stride=(2, 2), b=2)
-
-model.layer4[0].conv2 = ModifiedBcosConv2d(512, 512, kernel_size=(3, 3), stride=(2, 2), padding=(1, 1), b=2)
-model.layer4[0].downsample[0] = ModifiedBcosConv2d(1024, 2048, kernel_size=(1, 1), stride=(2, 2), b=2)
-    
 model.fc.linear = NormedConv2d(2048, 2, kernel_size=(1, 1), stride=(1, 1), bias=False) # code from B-cos paper reused to adjust network
 
 criterion = nn.CrossEntropyLoss()
@@ -194,16 +211,6 @@ for current_fold, (train_idx, val_idx) in enumerate(splits):
         best_f1 = 0.0
         best_recall = 0.0
         model = torch.hub.load('B-cos/B-cos-v2', 'resnet50', pretrained=True)
-
-        model.layer2[0].conv2 = ModifiedBcosConv2d(128, 128, kernel_size=(3, 3), stride=(2, 2), padding=(1, 1), b=2)
-        model.layer2[0].downsample[0] = ModifiedBcosConv2d(256, 512, kernel_size=(1, 1), stride=(2, 2), b=2)
-
-        model.layer3[0].conv2 = ModifiedBcosConv2d(256, 256, kernel_size=(3, 3), stride=(2, 2), padding=(1, 1), b=2)
-        model.layer3[0].downsample[0] = ModifiedBcosConv2d(512, 1024, kernel_size=(1, 1), stride=(2, 2), b=2)
-
-        model.layer4[0].conv2 = ModifiedBcosConv2d(512, 512, kernel_size=(3, 3), stride=(2, 2), padding=(1, 1), b=2)
-        model.layer4[0].downsample[0] = ModifiedBcosConv2d(1024, 2048, kernel_size=(1, 1), stride=(2, 2), b=2)
-            
         model.fc.linear = NormedConv2d(2048, 2, kernel_size=(1, 1), stride=(1, 1), bias=False) # code from B-cos paper reused to adjust network
         optimizer = optim.Adam(model.parameters(), lr=0.0001, weight_decay=1e-05)
         scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.1, patience=3, verbose=True)
