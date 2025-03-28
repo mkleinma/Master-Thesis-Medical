@@ -83,126 +83,143 @@ import logging
 logging.basicConfig(filename="train_debug_dehb_res_bcos.log", level=logging.DEBUG, format="%(asctime)s - %(levelname)s - %(message)s")
 
 cs = CS.ConfigurationSpace()
-cs.add([CS.CategoricalHyperparameter("lr", [1e-6, 1e-5, 1e-4]),
+cs.add([CS.CategoricalHyperparameter("lr", [1e-7, 1e-6, 1e-5, 1e-4]),
         CS.CategoricalHyperparameter("weight_decay", [0, 1e-6, 1e-5, 1e-4, 1e-3]),
         CS.CategoricalHyperparameter("patience", [3, 5, 10])])
 
 
+
+
+
 def train_model(config: Union[ConfigSpace.Configuration, List, np.array], fidelity: Union[int, float] = None, **kwargs) -> Dict:
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    
-    model = torch.hub.load('B-cos/B-cos-v2', 'resnet50', pretrained=True)
-    model.fc.linear = NormedConv2d(2048, 2, kernel_size=(1, 1), stride=(1, 1), bias=False) # code from B-cos paper reused to adjust network
-    model.to(device)
-    
-    criterion = nn.CrossEntropyLoss()
-    optimizer = optim.Adam(model.parameters(), lr=config['lr'], weight_decay=config['weight_decay'])
-    scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.1, patience=config['patience'], verbose=True)
-    print(f"Running train_model with config: {config}, fidelity: {fidelity}", flush=True)
+    fold_f1_scores = []
 
-    
-    best_f1 = 0.0
-    val_loss = 0.0
-    val_accuracy = 0.0
-
-    train_idx, val_idx = splits[0]
-    train_dataset = PneumoniaDataset(data.iloc[train_idx], image_folder, transform=transforms.Compose([
-        transforms.ToTensor(),
-        transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
-    ]))
-    val_dataset = PneumoniaDataset(data.iloc[val_idx], image_folder, transform=transforms.Compose([
-        transforms.ToTensor(),
-        transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
-    ]))
-    
-    train_loader = DataLoader(train_dataset, batch_size=16, shuffle=True)
-    val_loader = DataLoader(val_dataset, batch_size=16, shuffle=False)
-    
-    for epoch in range(int(fidelity)):
-        print(f"Starting epoch {epoch+1}", flush=True)
-        model.train()
-        for images, labels in train_loader:
-            labels = labels.to(device)
-            
-            six_channel_images = []
-            # create model.transform images
-            for img_tensor in images:
-                numpy_image = (img_tensor.permute(1, 2, 0).cpu().numpy() * 255).astype(np.uint8)
-                pil_image = Image.fromarray(numpy_image)
-                transformed_image = model.transform(pil_image)
-                six_channel_images.append(transformed_image)
-            
-            six_channel_images = torch.stack(six_channel_images).to(device)
-
-            outputs = model(six_channel_images)
-            if torch.isnan(outputs).any():
-                print("Warning: NaN detected in model outputs during training!", flush=True)
-                return {"fitness": -1, "cost": fidelity, "info": {"status": "NaN detected"}}
-            loss = criterion(outputs, labels)
-            optimizer.zero_grad()
-            loss.backward()
-            optimizer.step()
+    for fold in range(len(splits)):
+        print(f"\n=== Starting fold {fold+1}/5 ===", flush=True)
+        model = torch.hub.load('B-cos/B-cos-v2', 'resnet50', pretrained=True)
+        model.fc.linear = NormedConv2d(2048, 2, kernel_size=(1, 1), stride=(1, 1), bias=False) # code from B-cos paper reused to adjust network
+        model.to(device)
         
-        model.eval()
+        criterion = nn.CrossEntropyLoss()
+        optimizer = optim.Adam(model.parameters(), lr=config['lr'], weight_decay=config['weight_decay'])
+        scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.1, patience=config['patience'], verbose=True)
+        print(f"Running train_model with config: {config}, fidelity: {fidelity}", flush=True)
+
+    
+        best_f1 = 0.0
         val_loss = 0.0
-        val_correct = 0
-        val_total = 0
+        val_accuracy = 0.0
+
+        train_idx, val_idx = splits[fold]
+        train_dataset = PneumoniaDataset(data.iloc[train_idx], image_folder, transform=transforms.Compose([
+            transforms.ToTensor()
+        ]))
+        val_dataset = PneumoniaDataset(data.iloc[val_idx], image_folder, transform=transforms.Compose([
+            transforms.ToTensor()
+        ]))
         
-        all_preds = []
-        all_labels = []
-        all_probs = []
-
-        with torch.no_grad():
-            for images, labels in val_loader:
+        train_loader = DataLoader(train_dataset, batch_size=16, shuffle=True)
+        val_loader = DataLoader(val_dataset, batch_size=16, shuffle=False)
+        
+        best_fold_f1 = 0.0
+        
+        for epoch in range(int(fidelity)):
+            print(f"Starting epoch {epoch+1}", flush=True)
+            model.train()
+            for images, labels in train_loader:
                 labels = labels.to(device)
-
+                
                 six_channel_images = []
+                # create model.transform images
                 for img_tensor in images:
                     numpy_image = (img_tensor.permute(1, 2, 0).cpu().numpy() * 255).astype(np.uint8)
                     pil_image = Image.fromarray(numpy_image)
                     transformed_image = model.transform(pil_image)
                     six_channel_images.append(transformed_image)
-                    
+                
                 six_channel_images = torch.stack(six_channel_images).to(device)
 
                 outputs = model(six_channel_images)
                 if torch.isnan(outputs).any():
-                    print("Warning: NaN detected in model outputs during validation!", flush=True)
+                    print("Warning: NaN detected in model outputs during training!", flush=True)
                     return {"fitness": -1, "cost": fidelity, "info": {"status": "NaN detected"}}
-
                 loss = criterion(outputs, labels)
-                
-                val_loss += loss.item() * images.size(0)
-                preds = torch.argmax(outputs, dim=1)
-                
-                all_probs.extend(torch.softmax(outputs, dim=1)[:, 1].cpu().numpy().flatten())  
-                all_preds.extend(preds.cpu().numpy().flatten())  
-                all_labels.extend(labels.cpu().numpy().flatten())
+                optimizer.zero_grad()
+                loss.backward()
+                optimizer.step()
+            
+            model.eval()
+            val_loss = 0.0
+            val_correct = 0
+            val_total = 0
+            
+            all_preds = []
+            all_labels = []
+            all_probs = []
 
-                val_correct += (preds == labels).sum().item()
-                val_total += labels.size(0)
+            with torch.no_grad():
+                for images, labels in val_loader:
+                    labels = labels.to(device)
 
-        val_loss /= len(val_loader.dataset)
-        scheduler.step(val_loss)
-        f1 = f1_score(all_labels, all_preds)
-        
-        if best_f1 < f1:
-            best_f1 = f1
+                    six_channel_images = []
+                    for img_tensor in images:
+                        numpy_image = (img_tensor.permute(1, 2, 0).cpu().numpy() * 255).astype(np.uint8)
+                        pil_image = Image.fromarray(numpy_image)
+                        transformed_image = model.transform(pil_image)
+                        six_channel_images.append(transformed_image)
+                        
+                    six_channel_images = torch.stack(six_channel_images).to(device)
 
-    print(f"Final best f1: {best_f1} before potentially returning default values", flush=True)
+                    outputs = model(six_channel_images)
+                    if torch.isnan(outputs).any():
+                        print("Warning: NaN detected in model outputs during validation!", flush=True)
+                        return {"fitness": -1, "cost": fidelity, "info": {"status": "NaN detected"}}
+
+                    loss = criterion(outputs, labels)
+                    
+                    val_loss += loss.item() * images.size(0)
+                    preds = torch.argmax(outputs, dim=1)
+                    
+                    all_probs.extend(torch.softmax(outputs, dim=1)[:, 1].cpu().numpy().flatten())  
+                    all_preds.extend(preds.cpu().numpy().flatten())  
+                    all_labels.extend(labels.cpu().numpy().flatten())
+
+                    val_correct += (preds == labels).sum().item()
+                    val_total += labels.size(0)
+
+            val_loss /= len(val_loader.dataset)
+            scheduler.step(val_loss)
+            f1 = f1_score(all_labels, all_preds)
+            
+            if best_fold_f1 < f1:
+                best_fold_f1 = f1
+        fold_f1_scores.append(best_fold_f1)
+        print(f"Fold {fold+1} best F1: {best_fold_f1:.4f}", flush=True)
+        del model, optimizer, scheduler  # Add this
+        torch.cuda.empty_cache()  # Add this
+
+
+
+    avg_f1 = np.mean(fold_f1_scores)
+    print(f"\nAverage F1 across all folds: {avg_f1:.4f}", flush=True)
 
     return {
-        "fitness": 1 - best_f1,  # DEHB minimizes this value
-        "cost": fidelity,
-        "info": {"status": "Successful Execution"}
+        "fitness": 1 - avg_f1,
+        "cost": fidelity * len(splits),  # Fixed cost calculation
+        "info": {
+            "status": "Successful Execution",
+            "fold_f1_scores": fold_f1_scores,
+            "avg_f1": avg_f1
+    }
     }
 
 de = DEHB(f=train_model,
     dimensions=3,
     cs=cs,
     min_fidelity=1,
-    max_fidelity=10, # number of epochs to run it for
-    output_path="/pfs/work7/workspace/scratch/ma_mkleinma-thesis/dehb_results/resnet_base/",
+    max_fidelity=5, # number of epochs to run it for
+    output_path="/pfs/work7/workspace/scratch/ma_mkleinma-thesis/dehb_results/resnet_bcos_new/",
     n_workers=1)
 incumbent = de.run(fevals=10, runtime=160000)
 

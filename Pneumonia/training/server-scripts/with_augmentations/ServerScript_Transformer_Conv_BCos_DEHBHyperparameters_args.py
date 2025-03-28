@@ -182,8 +182,8 @@ for current_fold, (train_idx, val_idx) in enumerate(splits):
         best_recall = 0.0
         model = torch.hub.load('B-cos/B-cos-v2', 'vitc_b_patch1_14', pretrained=True)
         model[0].linear_head.linear = BcosLinear(in_features=768, out_features=2, bias=False, b=2)
-        optimizer = optim.Adam(model.parameters(), lr=0.0001, weight_decay=1e-05)
-        scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.1, patience=3, verbose=True)
+        optimizer = optim.Adam(model.parameters(), lr=1e-5, weight_decay=1e-06)
+        scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.1, patience=5, verbose=True)
         model = model.to(device)
         checkpoint_exists = False
 
@@ -321,7 +321,7 @@ for current_fold, (train_idx, val_idx) in enumerate(splits):
 
         if (recall > best_recall):
             best_recall = recall
-            torch.save(model.state_dict(), os.path.join(model_output_dir, f"pneumonia_detection_model_resnet_baseline_bestrecall_{fold}.pth"))
+            torch.save(model.state_dict(), os.path.join(model_output_dir, f"pneumonia_detection_model_transformer_bestrecall_{fold}.pth"))
             cm_file_path = os.path.join(cm_output_dir, f"confusion_matrix_best_recall_{fold}.json")
             with open(cm_file_path, 'w') as cm_file:
                 json.dump({'confusion_matrix': cm.tolist()}, cm_file, indent=4)
@@ -329,7 +329,7 @@ for current_fold, (train_idx, val_idx) in enumerate(splits):
 
         if (f1 > best_f1):
             best_f1 = f1
-            torch.save(model.state_dict(), os.path.join(model_output_dir, f"pneumonia_detection_model_transformer_bcos_bestf1_{fold}.pth"))
+            torch.save(model.state_dict(), os.path.join(model_output_dir, f"pneumonia_detection_model_transformer_bestf1_{fold}.pth"))
             cm_file_path = os.path.join(cm_output_dir, f"confusion_matrix_best_f1_{fold}.json")
             with open(cm_file_path, 'w') as cm_file:
                 json.dump({'confusion_matrix': cm.tolist()}, cm_file, indent=4)
@@ -352,7 +352,7 @@ for current_fold, (train_idx, val_idx) in enumerate(splits):
     print(f"Finished training fold {fold}.\n")
     
     # Save the final model
-    model_path = f"pneumonia_detection_model_fold_{fold}_transformer_conv_bcos.pth"
+    model_path = f"pneumonia_detection_model_fold_{fold}_transformer.pth"
     torch.save(model.state_dict(), os.path.join(model_output_dir, model_path))
     log_writer.close()
 

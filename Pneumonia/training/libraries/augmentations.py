@@ -33,15 +33,13 @@ class HeavyImageAugmentationSupport:
 
 def get_no_augmentations_no_resize():
     return transforms.Compose([
-    transforms.ToTensor(),
-    transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])  # Normalize with ImageNet stats
+    transforms.ToTensor()  # Normalize with ImageNet stats
     ])
     
 def get_no_augmentations_resize():
     return transforms.Compose([
     transforms.Resize((224, 224)),
-    transforms.ToTensor(),
-    transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])  # Normalize with ImageNet stats
+    transforms.ToTensor()  # Normalize with ImageNet stats
     ])
 
     
@@ -76,8 +74,7 @@ def get_light_augmentations_resize():
         transforms.RandomPerspective(distortion_scale=0.1, p=0.5),  # Perspective distortion
         transforms.Lambda(lambda img: TF.adjust_gamma(img, 2.0 ** random.gauss(0, 0.20))), # as in implementation from them
 
-        transforms.ToTensor(),
-        transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])  # ImageNet normalization
+        transforms.ToTensor()
     ])
     return transform
 
@@ -110,8 +107,7 @@ def get_light_augmentations_no_resize():
         transforms.RandomPerspective(distortion_scale=0.1, p=0.5),  # Perspective distortion
         transforms.Lambda(lambda img: TF.adjust_gamma(img, 2.0 ** random.gauss(0, 0.20))), # as in implementation from them
 
-        transforms.ToTensor(),
-        transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])  # ImageNet normalization
+        transforms.ToTensor()
     ])
     return transform
 
@@ -147,8 +143,7 @@ def get_heavy_augmentations_no_rotation_no_resize():
         transforms.RandomPerspective(distortion_scale=0.15, p=0.5),
         transforms.Lambda(lambda img: TF.adjust_gamma(img, 2.0 ** random.gauss(0, 0.25))), # as in implementation from them
         HeavyImageAugmentationSupport(),
-        transforms.ToTensor(),
-        transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
+        transforms.ToTensor()
     ])
     
     
@@ -182,7 +177,6 @@ def get_heavy_augmentations_no_rotation_resize():
         transforms.RandomPerspective(distortion_scale=0.15, p=0.5),
         transforms.Lambda(lambda img: TF.adjust_gamma(img, 2.0 ** random.gauss(0, 0.25))),
         HeavyImageAugmentationSupport(),
-        transforms.ToTensor(),
-        transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
+        transforms.ToTensor()
     ])
 

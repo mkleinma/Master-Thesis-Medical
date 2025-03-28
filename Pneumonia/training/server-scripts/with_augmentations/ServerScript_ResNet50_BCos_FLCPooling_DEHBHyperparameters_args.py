@@ -169,7 +169,7 @@ model.layer4[0].downsample[0] = ModifiedFLCBcosConv2d(1024, 2048, kernel_size=(1
 model.fc.linear = NormedConv2d(2048, 2, kernel_size=(1, 1), stride=(1, 1), bias=False) # code from B-cos paper reused to adjust network
 
 criterion = nn.CrossEntropyLoss()
-optimizer = optim.Adam(model.parameters(), lr=1e-05, weight_decay=0.001)
+optimizer = optim.Adam(model.parameters(), lr=1e-5, weight_decay=1e-3)
 scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.1, patience=3, verbose=True)
 start_epoch, start_fold, best_f1, best_recall, checkpoint_exists = 0, 0, 0.0, 0.0, False
 
@@ -202,7 +202,7 @@ for current_fold, (train_idx, val_idx) in enumerate(splits):
         model.layer4[0].conv2 = ModifiedFLCBcosConv2d(512, 512, kernel_size=(3, 3), stride=(2, 2), padding=(1, 1), b=2, transpose=True)
         model.layer4[0].downsample[0] = ModifiedFLCBcosConv2d(1024, 2048, kernel_size=(1, 1), stride=(2, 2), b=2, transpose=False)    
         model.fc.linear = NormedConv2d(2048, 2, kernel_size=(1, 1), stride=(1, 1), bias=False) # code from B-cos paper reused to adjust network
-        optimizer = optim.Adam(model.parameters(), lr=0.0001, weight_decay=1e-05)
+        optimizer = optim.Adam(model.parameters(), lr=1e-5, weight_decay=1e-3)
         scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.1, patience=3, verbose=True)
         model = model.to(device)
         checkpoint_exists = False
@@ -341,7 +341,7 @@ for current_fold, (train_idx, val_idx) in enumerate(splits):
         
         if (recall > best_recall):
             best_recall = recall
-            torch.save(model.state_dict(), os.path.join(model_output_dir, f"pneumonia_detection_model_resnet_baseline_bestrecall_{fold}.pth"))
+            torch.save(model.state_dict(), os.path.join(model_output_dir, f"pneumonia_detection_model_resnet_bestrecall_{fold}.pth"))
             cm_file_path = os.path.join(cm_output_dir, f"confusion_matrix_best_recall_{fold}.json")
             with open(cm_file_path, 'w') as cm_file:
                 json.dump({'confusion_matrix': cm.tolist()}, cm_file, indent=4)
@@ -350,7 +350,7 @@ for current_fold, (train_idx, val_idx) in enumerate(splits):
         
         if (f1 > best_f1):
             best_f1 = f1
-            torch.save(model.state_dict(), os.path.join(model_output_dir, f"pneumonia_detection_model_resnet_bcos_bestf1_{fold}.pth"))
+            torch.save(model.state_dict(), os.path.join(model_output_dir, f"pneumonia_detection_model_resnet_bestf1_{fold}.pth"))
             cm_file_path = os.path.join(cm_output_dir, f"confusion_matrix_best_f1_{fold}.json")
             with open(cm_file_path, 'w') as cm_file:
                 json.dump({'confusion_matrix': cm.tolist()}, cm_file, indent=4)
@@ -373,7 +373,7 @@ for current_fold, (train_idx, val_idx) in enumerate(splits):
     print(f"Finished training fold {fold}.\n")
     
     # Save the final model
-    model_path = f"pneumonia_detection_model_fold_{fold}_resnet_bcos.pth"
+    model_path = f"pneumonia_detection_model_fold_{fold}_resnet.pth"
     torch.save(model.state_dict(), os.path.join(model_output_dir, model_path))
     log_writer.close()
 
