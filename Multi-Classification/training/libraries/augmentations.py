@@ -36,48 +36,7 @@ def get_no_augmentations_no_resize():
     transforms.ToTensor()  # Normalize with ImageNet stats
     ])
     
-def get_no_augmentations_resize():
-    return transforms.Compose([
-    transforms.Resize((224, 224)),
-    transforms.ToTensor() # Normalize with ImageNet stats
-    ])
-
     
-# Define Light Augmentations
-def get_light_augmentations_resize():
-    transform = transforms.Compose([
-        transforms.Resize((224, 224)),
-        transforms.Lambda(lambda img: TF.affine(
-            img,
-            angle=0,  # No rotation yet
-            translate=(random.uniform(-32, 32), random.uniform(-32, 32)),  # Apply first translation
-            scale=1.0,  # No scaling yet
-            shear=0  # No shear yet
-        )),
-
-        transforms.Lambda(lambda img: TF.affine(
-            img,
-            angle=0,  # No rotation yet
-            translate=(0, 0),
-            scale=1.0 / (2 ** random.gauss(0, 0.1)),  # Apply correct inverse scaling
-            shear=0  # No shear yet
-        )),
-
-        transforms.Lambda(lambda img: TF.affine(
-            img,
-            angle=random.gauss(0, 5),  # Apply rotation
-            translate=(0, 0),
-            scale=1.0,  # No additional scaling
-            shear=random.gauss(0, 2.5)  # Apply shear after rotation
-        )),
-
-        transforms.RandomPerspective(distortion_scale=0.1, p=0.5),  # Perspective distortion
-        transforms.Lambda(lambda img: TF.adjust_gamma(img, 2.0 ** random.gauss(0, 0.20))), # as in implementation from them
-
-        transforms.ToTensor()  # ImageNet normalization
-    ])
-    return transform
-
 # 3 transforms based on order of source (detection_dataset.py)
 def get_light_augmentations_no_resize():
     transform = transforms.Compose([
@@ -147,36 +106,4 @@ def get_heavy_augmentations_no_rotation_no_resize():
     ])
     
     
-def get_heavy_augmentations_no_rotation_resize():
-    return transforms.Compose([
-        transforms.Resize((224, 224)),  # Resize the image to 224x224
-        transforms.RandomHorizontalFlip(p=0.5),
-        transforms.Lambda(lambda img: TF.affine(
-            img,
-            angle=0,  # No rotation yet
-            translate=(random.uniform(-32, 32), random.uniform(-32, 32)),  # Apply first translation
-            scale=1.0,  # No scaling yet
-            shear=0  # No shear yet
-        )),
-        
-        transforms.Lambda(lambda img: TF.affine(
-            img,
-            angle=0,  # Rotation: normal distribution (mean=0, std=6)
-            translate=(0,0),
-            scale=1.0 / (2 ** random.gauss(0, 0.15)),  # Log-normal scaling
-            shear=0
-        )),
-
-        transforms.Lambda(lambda img: transforms.functional.affine(
-            img,
-            angle=random.gauss(0, 6),  # Rotation: normal distribution (mean=0, std=6)
-            translate=(0,0),
-            scale=1.0,  # Log-normal scaling
-            shear=random.gauss(0, 4)  # Shear: normal distribution (mean=0, std=4)
-        )),
-        transforms.RandomPerspective(distortion_scale=0.15, p=0.5),
-        transforms.Lambda(lambda img: TF.adjust_gamma(img, 2.0 ** random.gauss(0, 0.25))),
-        HeavyImageAugmentationSupport(),
-        transforms.ToTensor()
-    ])
 
