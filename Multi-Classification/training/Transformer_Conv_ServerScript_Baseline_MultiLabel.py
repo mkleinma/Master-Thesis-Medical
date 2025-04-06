@@ -1,3 +1,4 @@
+# %%
 import argparse
 import json
 import seaborn as sns
@@ -25,21 +26,17 @@ import numpy as np
 import csv
 from torch.utils.data import WeightedRandomSampler
 
-from libraries.bcosconv2d import NormedConv2d
-from pooling.blur_bcosconv2d import ModifiedBcosConv2d
 from libraries import augmentations
-
-# no aug no light 
-# aug light
-
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--seed", type=int, required=True, help="Random seed for training")
-parser.add_argument("--augmentation", type=str, choices=["no", "light", "heavy"], required=True, help="Type of augmentation")
+parser.add_argument("--augmentation", type=str, choices=["no", "light", "heavy"], required=True, help="Augmentation Type")
 parser.add_argument("--sampling", type=lambda x: x.lower() == "true", default=False, help="Enable sampling (True/False)")
+
+
 args = parser.parse_args()
 
-## assisting script ##
+## assisting script
 def plot_confusion_matrix(cm, class_names):
     fig, ax = plt.subplots(figsize=(8, 8))
     sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', xticklabels=class_names, yticklabels=class_names)
@@ -99,14 +96,12 @@ if args.sampling:
     samp_text = "oversamp"
     
 # Paths
-csv_path = r"/pfs/work7/workspace/scratch/ma_mkleinma-thesis/training_splits/grouped_data.csv"
-image_folder = r"/pfs/work7/workspace/scratch/ma_mkleinma-thesis/rsna-pneumonia-detection-challenge/stage_2_train_images"
-splits_path = r"/pfs/work7/workspace/scratch/ma_mkleinma-thesis/training_splits/splits_balanced_fix.pkl"
-model_output_dir = f"/pfs/work7/workspace/scratch/ma_mkleinma-thesis/trained_models/30_epochs_bcos_resnet50_dehb_blur_{args.augmentation}_{samp_text}/seed_{args.seed}"
+csv_path = r"/pfs/work7/workspace/scratch/ma_mkleinma-thesis/training_splits/multilabel_dataset.csv"
+image_folder = r"/pfs/work7/workspace/scratch/ma_mkleinma-thesis/vinbigdata-chest-xray-abnormalities-detection/train_png_224"
+splits_path = r"/pfs/work7/workspace/scratch/ma_mkleinma-thesis/training_splits/vinbigdata_5fold_splits.pkl"
+model_output_dir = f"/pfs/work7/workspace/scratch/ma_mkleinma-thesis/trained_models_multilabel/30_base_transformer_{args.augmentation}_{samp_text}/seed_{args.seed}"
 cm_output_dir = os.path.join(model_output_dir, "confusion_matrix")
 
-
-# to make sure there is no issue when paths dont exist
 os.makedirs(model_output_dir, exist_ok=True)
 os.makedirs(cm_output_dir, exist_ok=True)
 
@@ -117,7 +112,7 @@ with open(splits_path, 'rb') as f:
 
 
 # Dataset class for Pneumonia
-class PneumoniaDataset(Dataset):
+class MultiLabelDataset(Dataset):
     def __init__(self, dataframe, image_folder, transform=None):
         self.data = dataframe
         self.image_folder = image_folder
@@ -127,23 +122,20 @@ class PneumoniaDataset(Dataset):
         return len(self.data)
 
     def __getitem__(self, idx):
-        row = self.data.iloc[idx]
-        image_path = os.path.join(self.image_folder, f"{row['patientId']}.dcm")
-        label = row['Target']
-
-        # Load DICOM file and process it into RGB format
-        dicom = pydicom.dcmread(image_path)
-        image = dicom.pixel_array
-        image = Image.fromarray(image).convert("RGB")
+        image_id = self.data.iloc[idx, 0]
+        labels = self.data.iloc[idx, 1:].values.astype('float32')
+        
+        image_path = os.path.join(self.image_folder, f"{image_id}.png")
+        image = Image.open(image_path).convert("RGB")
         
         if self.transform:
             image = self.transform(image)
 
-        return image, torch.tensor(label, dtype=torch.long)
+        return image, torch.tensor(labels)
 
 
 
-# Define transformations for the datasets
+# Define transformations for the datasets --- resize for baselines as model.transform else resizes
 if args.augmentation == "no":
     transform = augmentations.get_no_augmentations_no_resize()
 elif args.augmentation == "light":
@@ -153,25 +145,22 @@ elif args.augmentation == "heavy":
 
 transform_val = augmentations.get_no_augmentations_no_resize()
 
+class_names = [
+    "Aortic Enlargement", "Atelectasis", "Calcification", "Cardiomegaly",
+    "Consolidation", "ILD", "Infiltration", "Lung Opacity",
+    "Nodule/Mass", "Other lesion", "Pleural Effusion", "Pleural Thickening",
+    "Pneumothorax", "Pulmonary Fibrosis"]
+
+
 fold = 0
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 # Training loop
-model = torch.hub.load('B-cos/B-cos-v2', 'resnet50', pretrained=True)
+model = torch.hub.load('B-cos/B-cos-v2', 'standard_vitc_b_patch1_14', pretrained=True)        
+model.linear_head.linear = torch.nn.Linear(in_features=768, out_features=14, bias=True)    
 
-model.layer2[0].conv2 = ModifiedBcosConv2d(128, 128, kernel_size=(3, 3), stride=(2, 2), padding=(1, 1), b=2)
-model.layer2[0].downsample[0] = ModifiedBcosConv2d(256, 512, kernel_size=(1, 1), stride=(2, 2), b=2)
-
-model.layer3[0].conv2 = ModifiedBcosConv2d(256, 256, kernel_size=(3, 3), stride=(2, 2), padding=(1, 1), b=2)
-model.layer3[0].downsample[0] = ModifiedBcosConv2d(512, 1024, kernel_size=(1, 1), stride=(2, 2), b=2)
-
-model.layer4[0].conv2 = ModifiedBcosConv2d(512, 512, kernel_size=(3, 3), stride=(2, 2), padding=(1, 1), b=2)
-model.layer4[0].downsample[0] = ModifiedBcosConv2d(1024, 2048, kernel_size=(1, 1), stride=(2, 2), b=2)
-    
-model.fc.linear = NormedConv2d(2048, 2, kernel_size=(1, 1), stride=(1, 1), bias=False) # code from B-cos paper reused to adjust network
-
-criterion = nn.CrossEntropyLoss()
-optimizer = optim.Adam(model.parameters(), lr=1e-5, weight_decay=1e-3)
+criterion = nn.BCEWithLogitsLoss()
+optimizer = optim.Adam(model.parameters(), lr=0.0001, weight_decay=0.001)
 scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.1, patience=3, verbose=True)
 start_epoch, start_fold, best_f1, best_recall, checkpoint_exists = 0, 0, 0.0, 0.0, False
 
@@ -193,19 +182,9 @@ for current_fold, (train_idx, val_idx) in enumerate(splits):
     if not checkpoint_exists or current_fold != start_fold:
         best_f1 = 0.0
         best_recall = 0.0
-        model = torch.hub.load('B-cos/B-cos-v2', 'resnet50', pretrained=True)
-
-        model.layer2[0].conv2 = ModifiedBcosConv2d(128, 128, kernel_size=(3, 3), stride=(2, 2), padding=(1, 1), b=2)
-        model.layer2[0].downsample[0] = ModifiedBcosConv2d(256, 512, kernel_size=(1, 1), stride=(2, 2), b=2)
-
-        model.layer3[0].conv2 = ModifiedBcosConv2d(256, 256, kernel_size=(3, 3), stride=(2, 2), padding=(1, 1), b=2)
-        model.layer3[0].downsample[0] = ModifiedBcosConv2d(512, 1024, kernel_size=(1, 1), stride=(2, 2), b=2)
-
-        model.layer4[0].conv2 = ModifiedBcosConv2d(512, 512, kernel_size=(3, 3), stride=(2, 2), padding=(1, 1), b=2)
-        model.layer4[0].downsample[0] = ModifiedBcosConv2d(1024, 2048, kernel_size=(1, 1), stride=(2, 2), b=2)
-            
-        model.fc.linear = NormedConv2d(2048, 2, kernel_size=(1, 1), stride=(1, 1), bias=False) # code from B-cos paper reused to adjust network
-        optimizer = optim.Adam(model.parameters(), lr=1e-5, weight_decay=1e-03)
+        model = torch.hub.load('B-cos/B-cos-v2', 'standard_vitc_b_patch1_14', pretrained=True)        
+        model.linear_head.linear = torch.nn.Linear(in_features=768, out_features=14, bias=True)    
+        optimizer = optim.Adam(model.parameters(), lr=0.0001, weight_decay=0.0001)
         scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.1, patience=3, verbose=True)
         model = model.to(device)
         checkpoint_exists = False
@@ -218,21 +197,29 @@ for current_fold, (train_idx, val_idx) in enumerate(splits):
     train_data = data.iloc[train_idx]
     val_data = data.iloc[val_idx]
 
-    train_dataset = PneumoniaDataset(train_data, image_folder, transform=transform)
-    val_dataset = PneumoniaDataset(val_data, image_folder, transform=transform_val)
-
-    if args.sampling:  
-        class_counts = train_data["Target"].value_counts().to_dict()
-        class_weights = {label: 1.0 / count for label, count in class_counts.items()}  # Inverse frequency
-        sample_weights = train_data["Target"].map(class_weights).values
-        sampler = WeightedRandomSampler(sample_weights, len(sample_weights), replacement=True)
-        train_loader = DataLoader(train_dataset, batch_size=16, sampler=sampler)  
+    train_dataset = MultiLabelDataset(train_data, image_folder, transform=transform)
+    val_dataset = MultiLabelDataset(val_data, image_folder, transform=transform_val)
+    
+    
+    if args.sampling:
+        label_counts = train_data.iloc[:, 1:].sum(axis=0).values
+        class_weights = 1.0 / (label_counts + 0.1)
+        class_weights = np.clip(class_weights, a_min=0.5, a_max=3.0)
+        sample_weights = train_data.iloc[:, 1:].values.dot(class_weights)
+        sample_weights = (sample_weights - sample_weights.min()) / (sample_weights.max() - sample_weights.min() + 1e-7)
+    
+        sampler = WeightedRandomSampler(
+            weights=torch.from_numpy(sample_weights).float(),
+            num_samples=len(sample_weights),
+            replacement=True
+        )
+        train_loader = DataLoader(train_dataset, batch_size=16, sampler=sampler)
     else:
         train_loader = DataLoader(train_dataset, batch_size=16, shuffle=True)  
     val_loader = DataLoader(val_dataset, batch_size=16, shuffle=False)
             
     # Train for the current fold
-    num_epochs = 30
+    num_epochs = 10
     for epoch in range(num_epochs):
         model.train()
         running_loss = 0.0
@@ -248,20 +235,10 @@ for current_fold, (train_idx, val_idx) in enumerate(splits):
             start_epoch = 0
 
         for images, labels in train_loader:
-            labels = labels.to(device)
-            
-            six_channel_images = []
-            # create model.transform images
-            for img_tensor in images:
-                numpy_image = (img_tensor.permute(1, 2, 0).cpu().numpy() * 255).astype(np.uint8)
-                pil_image = Image.fromarray(numpy_image)
-                transformed_image = model.transform(pil_image) # to 224x224 resolution
-                six_channel_images.append(transformed_image)
-            
-            six_channel_images = torch.stack(six_channel_images).to(device)
+            images, labels = images.to(device), labels.to(device)
             
             # Forward pass
-            outputs = model(six_channel_images)
+            outputs = model(images)
             loss = criterion(outputs, labels)
 
             # Backward pass and optimization
@@ -270,9 +247,13 @@ for current_fold, (train_idx, val_idx) in enumerate(splits):
             optimizer.step()
 
             running_loss += loss.item() * images.size(0)
-            preds = torch.argmax(outputs, dim=1)
-            correct += (preds == labels).sum().item()
-            total += labels.size(0)
+            probs = torch.sigmoid(outputs)  # Convert logits to probabilities
+            preds = (probs > 0.5).int()  # Multi-label thresholding at 0.5
+            
+            correct += (preds == labels).sum().item()  
+            total += labels.numel()  
+            #correct = (preds == labels).sum(dim=1) == labels.shape[1]  # Check all labels per sample
+            #train_accuracy = correct.float().mean().item()
 
         train_loss = running_loss / len(train_loader.dataset)
         train_accuracy = correct / total
@@ -295,36 +276,34 @@ for current_fold, (train_idx, val_idx) in enumerate(splits):
 
         with torch.no_grad():
             for images, labels in val_loader:
-                labels = labels.to(device)
-                six_channel_images = []
-                for img_tensor in images:
-                    numpy_image = (img_tensor.permute(1, 2, 0).cpu().numpy() * 255).astype(np.uint8)
-                    pil_image = Image.fromarray(numpy_image)
-                    transformed_image = model.transform(pil_image)
-                    six_channel_images.append(transformed_image)
-                    
-                six_channel_images = torch.stack(six_channel_images).to(device)
-                outputs = model(six_channel_images)
+                images, labels = images.to(device), labels.to(device)
+                outputs = model(images)
                 loss = criterion(outputs, labels)
 
                 val_loss += loss.item() * images.size(0)
-                preds = torch.argmax(outputs, dim=1)
+                probs = torch.sigmoid(outputs)  # Convert to probabilities
+                preds = (probs > 0.5).int()
 
-                all_probs.extend(torch.softmax(outputs, dim=1)[:, 1].cpu().numpy().flatten())
-                all_preds.extend(preds.cpu().numpy().flatten())
-                all_labels.extend(labels.cpu().numpy().flatten())
+                all_probs.append(probs.cpu().numpy())
+                all_labels.append(labels.cpu().numpy())
+                all_preds.append(preds.cpu().numpy())
                 
-                val_correct += (preds == labels).sum().item()
-                val_total += labels.size(0)
+                val_correct += (preds == labels).sum().item()  # Total correct predictions across all labels
+                val_total += labels.numel()  # Total number of labels (samples * num_labels)
+
+
+        all_labels = np.concatenate(all_labels)
+        all_preds = np.concatenate(all_preds)
+        all_probs = np.concatenate(all_probs)
 
         val_loss /= len(val_loader.dataset)
         val_accuracy = val_correct / val_total
         scheduler.step(val_loss)
         
-        precision = precision_score(all_labels, all_preds)
-        recall = recall_score(all_labels, all_preds)
-        f1 = f1_score(all_labels, all_preds)
-        auc = roc_auc_score(all_labels, all_probs)
+        precision = precision_score(all_labels, all_preds, average='macro')
+        recall = recall_score(all_labels, all_preds, average='macro')
+        f1 = f1_score(all_labels, all_preds, average='macro')
+        auc = roc_auc_score(all_labels, all_probs, average='macro')
         
         log_writer.add_scalar('Loss/Validation', val_loss, epoch+1)
         log_writer.add_scalar('Accuracy/Validation', val_accuracy, epoch+1)
@@ -336,34 +315,60 @@ for current_fold, (train_idx, val_idx) in enumerate(splits):
         current_lr = optimizer.param_groups[0]['lr']
         log_writer.add_scalar('Learning_Rate', current_lr, epoch)
         
-        cm = confusion_matrix(all_labels, all_preds)
-        class_names = ['No Pneumonia', 'Pneumonia']
-        cm_figure = plot_confusion_matrix(cm, class_names)
-        log_writer.add_figure('Confusion_Matrix', cm_figure, epoch)
+        num_classes = 14
+        cm_per_class = np.zeros((num_classes, 2, 2), dtype=int)  # 14 confusion matrices of size 2x2
+
+        for class_idx in range(num_classes):
+            true_labels = all_labels[:, class_idx].astype(int)
+            pred_labels = all_preds[:, class_idx].astype(int)
+
+            cm_per_class[class_idx] = confusion_matrix(
+                true_labels, pred_labels, labels=[0, 1]
+            )
+
+        # Save per-class confusion matrices
+        cm_file_path = os.path.join(cm_output_dir, f"confusion_matrices.json")
+        with open(cm_file_path, 'w') as cm_file:
+            json.dump({
+                'confusion_matrices': cm_per_class.tolist(),
+                'shape': cm_per_class.shape  # Preserve array dimensions for later use
+            }, cm_file, indent=4)
+
+        print(f"Per-class confusion matrices saved at {cm_file_path}")
         
-        
+
+        for class_idx in range(num_classes):
+            cm = cm_per_class[class_idx]
+            class_name = class_names[class_idx]
+            print(f"Logging confusion matrix for {class_name}...")
+
+            # Plot confusion matrix
+            cm_figure = plot_confusion_matrix(cm, ['Class 0', 'Class 1'])
+
+            # Log the plot to TensorBoard
+            log_writer.add_figure(f'Confusion_Matrix/{class_name}', cm_figure, epoch)
+
         if (recall > best_recall):
             best_recall = recall
             torch.save(model.state_dict(), os.path.join(model_output_dir, f"pneumonia_detection_model_resnet_baseline_bestrecall_{fold}.pth"))
-            cm_file_path = os.path.join(cm_output_dir, f"confusion_matrix_best_recall_{fold}.json")
+            cm_file_path = os.path.join(cm_output_dir, f"confusion_matrices_best_recall_{fold}.json")
             with open(cm_file_path, 'w') as cm_file:
-                json.dump({'confusion_matrix': cm.tolist()}, cm_file, indent=4)
-            print(f"Confusion Matrix for Fold {fold} saved at {cm_file_path}")
+                json.dump({
+                    'confusion_matrices': cm_per_class.tolist(),
+                    'shape': cm_per_class.shape  # Preserve array dimensions for later use
+                }, cm_file, indent=4)
+            print(f"Confusion Matrices for Fold {fold} saved at {cm_file_path}")
 
         
         if (f1 > best_f1):
             best_f1 = f1
-            torch.save(model.state_dict(), os.path.join(model_output_dir, f"pneumonia_detection_model_resnet_bcos_bestf1_{fold}.pth"))
+            torch.save(model.state_dict(), os.path.join(model_output_dir, f"pneumonia_detection_model_resnet_baseline_bestf1_{fold}.pth"))
             cm_file_path = os.path.join(cm_output_dir, f"confusion_matrix_best_f1_{fold}.json")
             with open(cm_file_path, 'w') as cm_file:
-                json.dump({'confusion_matrix': cm.tolist()}, cm_file, indent=4)
-            print(f"Confusion Matrix for Fold {fold} saved at {cm_file_path}")
-
-        if epoch == num_epochs - 1:
-            cm = confusion_matrix(all_labels, all_preds)
-            cm_file_path = os.path.join(cm_output_dir, f"confusion_matrix_fold_{fold}.json")
-            with open(cm_file_path, 'w') as cm_file:
-                json.dump({'confusion_matrix': cm.tolist()}, cm_file, indent=4)
+                json.dump({
+                    'confusion_matrices': cm_per_class.tolist(),
+                    'shape': cm_per_class.shape  # Preserve array dimensions for later use
+                }, cm_file, indent=4)
             print(f"Confusion Matrix for Fold {fold} saved at {cm_file_path}")
             
         save_checkpoint_path = os.path.join(model_output_dir, f"checkpoint_fold_{fold}.pth")
@@ -376,9 +381,11 @@ for current_fold, (train_idx, val_idx) in enumerate(splits):
     print(f"Finished training fold {fold}.\n")
     
     # Save the final model
-    model_path = f"pneumonia_detection_model_fold_{fold}_resnet_bcos.pth"
+    model_path = f"pneumonia_detection_model_fold_{fold}_resnet_baseline.pth"
     torch.save(model.state_dict(), os.path.join(model_output_dir, model_path))
     log_writer.close()
+
+
 
 
 
