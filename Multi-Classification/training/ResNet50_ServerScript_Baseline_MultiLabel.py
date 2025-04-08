@@ -26,7 +26,8 @@ import numpy as np
 import csv
 from torch.utils.data import WeightedRandomSampler
 
-from libraries import augmentations
+from libraries_multilabel import augmentations
+from libraries_multilabel import MultiLabelDataset
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--seed", type=int, required=True, help="Random seed for training")
@@ -105,37 +106,11 @@ cm_output_dir = os.path.join(model_output_dir, "confusion_matrix")
 os.makedirs(model_output_dir, exist_ok=True)
 os.makedirs(cm_output_dir, exist_ok=True)
 
-# Load data and splits
 data = pd.read_csv(csv_path)
 with open(splits_path, 'rb') as f:
     splits = pickle.load(f)
 
 
-# Dataset class for Pneumonia
-class MultiLabelDataset(Dataset):
-    def __init__(self, dataframe, image_folder, transform=None):
-        self.data = dataframe
-        self.image_folder = image_folder
-        self.transform = transform
-
-    def __len__(self):
-        return len(self.data)
-
-    def __getitem__(self, idx):
-        image_id = self.data.iloc[idx, 0]
-        labels = self.data.iloc[idx, 1:].values.astype('float32')
-        
-        image_path = os.path.join(self.image_folder, f"{image_id}.png")
-        image = Image.open(image_path).convert("RGB")
-        
-        if self.transform:
-            image = self.transform(image)
-
-        return image, torch.tensor(labels)
-
-
-
-# Define transformations for the datasets --- resize for baselines as model.transform else resizes
 if args.augmentation == "no":
     transform = augmentations.get_no_augmentations_no_resize()
 elif args.augmentation == "light":
@@ -204,10 +179,10 @@ for current_fold, (train_idx, val_idx) in enumerate(splits):
     if args.sampling:
         label_counts = train_data.iloc[:, 1:].sum(axis=0).values  
         class_weights = 1. / (label_counts + 1e-6)
-        class_weights = np.clip(class_weights, a_min=0.5, a_max=3.0)
+        class_weights = np.clip(class_weights, a_min=1/3, a_max=3.0)
         
         # Calculate sample weights
-        sample_weights = train_data.iloc[:, 1:].dot(class_weights).values
+        sample_weights = train_data.iloc[:, 1:].dot(class_weights).to_numpy()
         
         # Convert to tensor and normalize
         sample_weights = torch.as_tensor(sample_weights, dtype=torch.float32)
