@@ -26,9 +26,10 @@ import numpy as np
 import csv
 from torch.utils.data import WeightedRandomSampler
 
-from libraries.bcosconv2d import NormedConv2d
-from libraries import augmentations
-from libraries.bcoslinear import BcosLinear
+from libraries_multilabel.bcosconv2d import NormedConv2d
+from libraries_multilabel.bcoslinear import BcosLinear
+from libraries_multilabel.augmentations import augmentations
+from libraries_multilabel.MultiLabelDatasets import MultiLabelDataset
 
 
 parser = argparse.ArgumentParser()
@@ -114,31 +115,6 @@ os.makedirs(cm_output_dir, exist_ok=True)
 data = pd.read_csv(csv_path)
 with open(splits_path, 'rb') as f:
     splits = pickle.load(f)
-
-
-# Dataset class for Pneumonia
-class MultiLabelDataset(Dataset):
-    def __init__(self, dataframe, image_folder, transform=None):
-        self.data = dataframe
-        self.image_folder = image_folder
-        self.transform = transform
-
-    def __len__(self):
-        return len(self.data)
-
-    def __getitem__(self, idx):
-        image_id = self.data.iloc[idx, 0]
-        labels = self.data.iloc[idx, 1:].values.astype('float32')
-        
-        image_path = os.path.join(self.image_folder, f"{image_id}.png")
-        image = Image.open(image_path).convert("RGB")
-        
-        if self.transform:
-            image = self.transform(image)
-
-        return image, torch.tensor(labels)
-
-
 
 # Define transformations for the datasets --- resize for baselines as model.transform else resizes
 if args.augmentation == "no":
