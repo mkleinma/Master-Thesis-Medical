@@ -181,14 +181,35 @@ for current_fold, (train_idx, val_idx) in enumerate(splits):
     
     
     if args.sampling:
-        label_counts = train_data.iloc[:, 1:].sum(axis=0).values # how many of each label
-        class_weights = 1. / (label_counts + 0.1) # smoothing factor 0.1
-        class_weights = np.clip(class_weights, a_min = 0.01, a_max = 10.0)
-        sample_weights = train_data.iloc[:, 1:].dot(class_weights)
-        sample_weights /= sample_weights.max()
-        sampler = WeightedRandomSampler(sample_weights, len(sample_weights))
+        label_counts = train_data.iloc[:, 1:].sum(axis=0).values  
+        class_weights = 1. / (label_counts + 1e-6)
+        class_weights = np.clip(class_weights, a_min=1/3, a_max=3.0)
+        
+        # Calculate sample weights
+        sample_weights = train_data.iloc[:, 1:].dot(class_weights).to_numpy()
+        
+        # Convert to tensor and normalize
+        sample_weights = torch.as_tensor(sample_weights, dtype=torch.float32)
+        sample_weights = (sample_weights - sample_weights.min()) / (sample_weights.max() - sample_weights.min() + 1e-6)
+        
+        # Create sampler with critical parameters
+        sampler = WeightedRandomSampler(
+            weights=sample_weights,
+            num_samples=len(sample_weights),
+            replacement=True,
+            generator=torch.Generator().manual_seed(args.seed)
+        )
 
-        train_loader = DataLoader(train_dataset, batch_size=16, sampler=sampler)
+        train_loader = DataLoader(train_dataset, batch_size=32, sampler=sampler)
+
+        #label_counts = train_data.iloc[:, 1:].sum(axis=0).values # how many of each label
+        #class_weights = 1. / (label_counts + 0.1) # smoothing factor 0.1
+        #class_weights = np.clip(class_weights, a_min = 0.01, a_max = 10.0)
+        #sample_weights = train_data.iloc[:, 1:].dot(class_weights)
+        #sample_weights /= sample_weights.max()
+        #sampler = WeightedRandomSampler(sample_weights, len(sample_weights))
+
+        #train_loader = DataLoader(train_dataset, batch_size=16, sampler=sampler)
     else:
         train_loader = DataLoader(train_dataset, batch_size=16, shuffle=True)  
     val_loader = DataLoader(val_dataset, batch_size=16, shuffle=False)

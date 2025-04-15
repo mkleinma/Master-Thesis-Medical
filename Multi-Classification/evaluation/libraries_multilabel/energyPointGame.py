@@ -14,7 +14,9 @@ def energy_point_game(bbox, saliency_map):
   w, h = saliency_map.shape
   
   empty = torch.zeros((w, h))
-  empty[x1:x2, y1:y2] = 1
+  empty[y1:y2, x1:x2] = 1 # changed?
+
+  #empty[x1:x2, y1:y2] = 1
   mask_bbox = saliency_map * empty  
   
   energy_bbox =  mask_bbox.sum()

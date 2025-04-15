@@ -27,7 +27,7 @@ import csv
 from torch.utils.data import WeightedRandomSampler
 
 from libraries_multilabel import augmentations
-from libraries_multilabel import MultiLabelDataset
+from libraries_multilabel.MultiLabelDatasets import MultiLabelDataset
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--seed", type=int, required=True, help="Random seed for training")
