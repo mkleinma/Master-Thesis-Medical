@@ -86,8 +86,37 @@ class FLC_Pooling(nn.Module):
 
         #return torch.fft.ifft2(torch.fft.ifftshift(low_part), norm='forward').real#.cuda()
 
-'''
 
+class correct_ASAP_padding_large(nn.Module):
+    # pooling trough selecting only the low frequent part in the fourier domain and only using this part to go back into the spatial domain
+    # save computations as we do not need to do the downsampling trough conv with stride 2
+    # using a hamming window to prevent sinc-interpolation artifacts
+    def __init__(self):
+        self.window2d = None
+        super(correct_ASAP_padding_large, self).__init__()
+
+    def forward(self, x):
+
+        x = F.pad(x, (int(x.size(3)/2-1), int(x.size(3)/2), int(x.size(2)/2-1), int(x.size(2)/2)), "constant", 0)
+        if not torch.is_tensor(self.window2d):
+            window1d = np.abs(np.hamming(x.size(2)))
+            #window2d = np.sqrt(np.outer(window1d,window1d))
+            window2nd = np.abs(np.hamming(x.size(3)))
+            window2d = np.sqrt(np.outer(window1d,window2nd))
+            self.window2d = torch.Tensor(window2d).cuda()
+            del window1d
+            del window2d
+
+        low_part = torch.fft.fftshift(torch.fft.fft2(x, norm='forward'))
+        low_part = low_part*self.window2d.unsqueeze(0).unsqueeze(0)
+        low_part = low_part[:,:,int(x.size()[2]/4):int(x.size()[2]/4*3),int(x.size()[3]/4):int(x.size()[3]/4*3)]
+
+        fc = torch.fft.ifft2(torch.fft.ifftshift(low_part), norm='forward').real
+        fc = fc[:,:,int( fc.size(2)/4):int(3*fc.size(2)/4),int(fc.size(3)/4): int(3*fc.size(3)/4)]
+        return fc
+
+
+'''
 class FLC_Pooling(nn.Module):
     # pooling through selecting only the low frequent part in the fourier domain and only using this part to go back into the spatial domain
     # save computations as we do not need to do the downsampling trough conv with stride 2
