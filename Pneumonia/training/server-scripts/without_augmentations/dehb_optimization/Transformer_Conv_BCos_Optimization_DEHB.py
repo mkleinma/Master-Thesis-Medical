@@ -110,11 +110,9 @@ def train_model(config: Union[ConfigSpace.Configuration, List, np.array], fideli
     train_idx, val_idx = splits[0]
     train_dataset = PneumoniaDataset(data.iloc[train_idx], image_folder, transform=transforms.Compose([
         transforms.ToTensor(),
-        transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
     ]))
     val_dataset = PneumoniaDataset(data.iloc[val_idx], image_folder, transform=transforms.Compose([
         transforms.ToTensor(),
-        transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
     ]))
     
     train_loader = DataLoader(train_dataset, batch_size=16, shuffle=True)
@@ -203,7 +201,7 @@ de = DEHB(f=train_model,
     dimensions=3,
     cs=cs,
     min_fidelity=1,
-    max_fidelity=10, # number of epochs to run it for
+    max_fidelity=30, # number of epochs to run it for
     output_path="/pfs/work7/workspace/scratch/ma_mkleinma-thesis/dehb_results/trans_bcos/",
     n_workers=1)
 incumbent = de.run(fevals=10, runtime=160000)

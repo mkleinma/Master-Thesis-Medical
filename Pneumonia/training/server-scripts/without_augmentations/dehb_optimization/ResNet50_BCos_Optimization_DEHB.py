@@ -218,7 +218,7 @@ de = DEHB(f=train_model,
     dimensions=3,
     cs=cs,
     min_fidelity=1,
-    max_fidelity=5, # number of epochs to run it for
+    max_fidelity=30, # number of epochs to run it for
     output_path="/pfs/work7/workspace/scratch/ma_mkleinma-thesis/dehb_results/resnet_bcos_new/",
     n_workers=1)
 incumbent = de.run(fevals=10, runtime=160000)

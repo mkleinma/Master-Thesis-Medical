@@ -20,6 +20,28 @@ logging.basicConfig(filename="train_debug_flc.log", level=logging.DEBUG, format=
 
 
 
+'''FLC Pooling module
+can be used and distributed under the MIT license
+Reference:
+[1] Grabinski, J., Jung, S., Keuper, J., & Keuper, M. (2022). 
+    "FrequencyLowCut Pooling--Plug & Play against Catastrophic Overfitting." 
+    European Conference on Computer Vision. Cham: Springer Nature Switzerland, 2022.
+'''
+
+import math
+import torch
+from torch import nn as nn
+from torch.nn import functional as F
+import torchvision.transforms as T
+from torch.nn import init as init
+from torch.nn.modules.batchnorm import _BatchNorm
+import numpy as np
+import logging
+
+logging.basicConfig(filename="train_debug_flc.log", level=logging.DEBUG, format="%(asctime)s - %(levelname)s - %(message)s")
+
+
+
 class FLC_Pooling(nn.Module):
     # pooling through selecting only the low frequent part in the fourier domain and only using this part to go back into the spatial domain
     # save computations as we do not need to do the downsampling trough conv with stride 2
@@ -85,7 +107,6 @@ class FLC_Pooling(nn.Module):
         return something#.cuda()
 
         #return torch.fft.ifft2(torch.fft.ifftshift(low_part), norm='forward').real#.cuda()
-
 '''
 
 class FLC_Pooling(nn.Module):
