@@ -262,6 +262,7 @@ for current_fold, (train_idx, val_idx) in enumerate(splits):
         all_preds = []
         all_labels = []
         all_probs = []
+        
 
         with torch.no_grad():
             for images, labels in val_loader:

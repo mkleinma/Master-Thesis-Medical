@@ -27,14 +27,37 @@ def energy_point_game(bbox, saliency_map):
   
   return proportion
 
-def energy_point_game_mask(mask, saliency_map):
+def energy_point_game_mask(mask, saliency_map, threshold=0):
     """
     mask: Precomputed mask with 1s in ALL target regions
     saliency_map: Explanation heatmap
     """
     assert mask.shape == saliency_map.shape, "Mask/saliency shape mismatch"
+    if threshold is not None:
+      max_val = saliency_map.max()
+      thresh_val = threshold * max_val
+      saliency_map = torch.where(saliency_map >= thresh_val, 
+                                saliency_map, 
+                                torch.zeros_like(saliency_map))
+
     
     masked_energy = (saliency_map * mask).sum()
     total_energy = saliency_map.sum()
     
     return masked_energy.item() / total_energy.item()
+
+def energy_point_game_recall(bbox, saliency_map, threshold=0):
+  bounding_box_map = bbox * saliency_map 
+  energy_bbox =  bounding_box_map.abs().sum() # calculate before removal of negative values
+  
+  if threshold is not None:
+    max_val = saliency_map.max()
+    thresh_val = threshold * max_val
+    bounding_box_map = torch.where(bounding_box_map >= thresh_val, 
+                              bounding_box_map, 
+                              torch.zeros_like(bounding_box_map))
+  
+  
+  
+  proportion = bounding_box_map.sum() / energy_bbox  
+  return proportion.item()

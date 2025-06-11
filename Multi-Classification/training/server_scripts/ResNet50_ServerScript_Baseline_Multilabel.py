@@ -26,7 +26,7 @@ import numpy as np
 import csv
 from torch.utils.data import WeightedRandomSampler
 
-from libraries import augmentations
+from libraries_multilabel import augmentations
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--seed", type=int, required=True, help="Random seed for training")
@@ -96,10 +96,10 @@ if args.sampling:
     samp_text = "oversamp"
     
 # Paths
-csv_path = r"/pfs/work7/workspace/scratch/ma_mkleinma-thesis/training_splits/multilabel_dataset.csv"
-image_folder = r"/pfs/work7/workspace/scratch/ma_mkleinma-thesis/vinbigdata-chest-xray-abnormalities-detection/train"
-splits_path = r"/pfs/work7/workspace/scratch/ma_mkleinma-thesis/training_splits/vinbigdata_5fold_splits.pkl"
-model_output_dir = f"/pfs/work7/workspace/scratch/ma_mkleinma-thesis/trained_models_multilabel/30_base_resnet50_{args.augmentation}_{samp_text}/seed_{args.seed}"
+csv_path = r"/pfs/work9/workspace/scratch/ma_mkleinma-thesis/training_splits/multilabel_dataset.csv"
+image_folder = r"/pfs/work9/workspace/scratch/ma_mkleinma-thesis/vinbigdata-chest-xray-abnormalities-detection/train"
+splits_path = r"/pfs/work9/workspace/scratch/ma_mkleinma-thesis/training_splits/vinbigdata_5fold_splits.pkl"
+model_output_dir = f"/pfs/work9/workspace/scratch/ma_mkleinma-thesis/trained_models_multilabel/30_base_resnet50_{args.augmentation}_{samp_text}/seed_{args.seed}"
 cm_output_dir = os.path.join(model_output_dir, "confusion_matrix")
 
 
