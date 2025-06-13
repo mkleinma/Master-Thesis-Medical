@@ -1,4 +1,7 @@
 """
+Credits go to the authors of B-cos-v2: Moritz Böhle, Navdeeppal Singh, Mario Fritz, Bernt Schiele. TPAMI, 2024.
+Taken from: https://github.com/B-cos/B-cos-v2
+
 Contains a Linear layer which uses the B-cos transform.
 
 NOTE: In case you're wondering why the convolution models do not use

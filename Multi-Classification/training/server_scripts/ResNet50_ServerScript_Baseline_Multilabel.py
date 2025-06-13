@@ -27,6 +27,7 @@ import csv
 from torch.utils.data import WeightedRandomSampler
 
 from libraries_multilabel import augmentations
+from libraries_multilabel.MultiLabelDatasets import MultiLabelDataset
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--seed", type=int, required=True, help="Random seed for training")
@@ -96,59 +97,34 @@ if args.sampling:
     samp_text = "oversamp"
     
 # Paths
-csv_path = r"/pfs/work9/workspace/scratch/ma_mkleinma-thesis/training_splits/multilabel_dataset.csv"
-image_folder = r"/pfs/work9/workspace/scratch/ma_mkleinma-thesis/vinbigdata-chest-xray-abnormalities-detection/train"
-splits_path = r"/pfs/work9/workspace/scratch/ma_mkleinma-thesis/training_splits/vinbigdata_5fold_splits.pkl"
-model_output_dir = f"/pfs/work9/workspace/scratch/ma_mkleinma-thesis/trained_models_multilabel/30_base_resnet50_{args.augmentation}_{samp_text}/seed_{args.seed}"
+csv_path = r"/pfs/work7/workspace/scratch/ma_mkleinma-thesis/training_splits/multilabel_dataset.csv"
+image_folder = r"/pfs/work7/workspace/scratch/ma_mkleinma-thesis/vinbigdata-chest-xray-abnormalities-detection/train_png_224"
+splits_path = r"/pfs/work7/workspace/scratch/ma_mkleinma-thesis/training_splits/vinbigdata_5fold_splits.pkl"
+model_output_dir = f"/pfs/work7/workspace/scratch/ma_mkleinma-thesis/trained_models_multilabel/30_base_resnet50_{args.augmentation}_{samp_text}_samplerchange/seed_{args.seed}"
 cm_output_dir = os.path.join(model_output_dir, "confusion_matrix")
 
-
-# to make sure there is no issue when paths dont exist
 os.makedirs(model_output_dir, exist_ok=True)
 os.makedirs(cm_output_dir, exist_ok=True)
 
-# Load data and splits
 data = pd.read_csv(csv_path)
 with open(splits_path, 'rb') as f:
     splits = pickle.load(f)
 
 
-# Dataset class for Pneumonia
-class MultiLabelDataset(Dataset):
-    def __init__(self, dataframe, image_folder, transform=None):
-        self.data = dataframe
-        self.image_folder = image_folder
-        self.transform = transform
-
-    def __len__(self):
-        return len(self.data)
-
-    def __getitem__(self, idx):
-        image_id = self.data.iloc[idx, 0]
-        labels = self.data.iloc[idx, 1:].values.astype('float32')
-        image_path = os.path.join(self.image_folder, f"{image_id}.dcm")
-        
-        # Load DICOM file and process it into RGB format
-        dicom = pydicom.dcmread(image_path)
-        image = dicom.pixel_array
-        image = Image.fromarray(image).convert("RGB")
-        
-        if self.transform:
-            image = self.transform(image)
-
-        return image, torch.tensor(labels)
-
-
-
-# Define transformations for the datasets --- resize for baselines as model.transform else resizes
 if args.augmentation == "no":
-    transform = augmentations.get_no_augmentations_resize()
+    transform = augmentations.get_no_augmentations_no_resize()
 elif args.augmentation == "light":
-    transform = augmentations.get_light_augmentations_resize()
+    transform = augmentations.get_light_augmentations_no_resize()
 elif args.augmentation == "heavy":
-    transform = augmentations.get_heavy_augmentations_no_rotation_resize()
+    transform = augmentations.get_heavy_augmentations_no_rotation_no_resize()
 
-transform_val = augmentations.get_no_augmentations_resize()
+transform_val = augmentations.get_no_augmentations_no_resize()
+
+class_names = [
+    "Aortic Enlargement", "Atelectasis", "Calcification", "Cardiomegaly",
+    "Consolidation", "ILD", "Infiltration", "Lung Opacity",
+    "Nodule/Mass", "Other lesion", "Pleural Effusion", "Pleural Thickening",
+    "Pneumothorax", "Pulmonary Fibrosis"]
 
 
 fold = 0
@@ -201,17 +177,29 @@ for current_fold, (train_idx, val_idx) in enumerate(splits):
     
     
     if args.sampling:
-        label_counts = train_data.iloc[:, 1:].sum(axis=0).values # how many of each label
-        class_weights = 1. / (label_counts + 0.1) # smoothing factor 0.1
-        class_weights = np.clip(class_weights, a_min = 0.01, a_max = 10.0)
-        sample_weights = train_data.iloc[:, 1:].dot(class_weights)
-        sample_weights /= sample_weights.max()
-        sampler = WeightedRandomSampler(sample_weights, len(sample_weights))
+        label_counts = train_data.iloc[:, 1:].sum(axis=0).values  
+        class_weights = 1. / (label_counts + 1e-6)
+        class_weights = np.clip(class_weights, a_min=1/3, a_max=3.0)
+        
+        # Calculate sample weights
+        sample_weights = train_data.iloc[:, 1:].dot(class_weights).to_numpy()
+        
+        # Convert to tensor and normalize
+        sample_weights = torch.as_tensor(sample_weights, dtype=torch.float32)
+        sample_weights = (sample_weights - sample_weights.min()) / (sample_weights.max() - sample_weights.min() + 1e-6)
+        
+        # Create sampler with critical parameters
+        sampler = WeightedRandomSampler(
+            weights=sample_weights,
+            num_samples=len(sample_weights),
+            replacement=True,
+            generator=torch.Generator().manual_seed(args.seed)
+        )
 
-        train_loader = DataLoader(train_dataset, batch_size=16, sampler=sampler)
+        train_loader = DataLoader(train_dataset, batch_size=32, sampler=sampler)
     else:
-        train_loader = DataLoader(train_dataset, batch_size=16, shuffle=True)  
-    val_loader = DataLoader(val_dataset, batch_size=16, shuffle=False)
+        train_loader = DataLoader(train_dataset, batch_size=32, shuffle=True)  
+    val_loader = DataLoader(val_dataset, batch_size=32, shuffle=False)
             
     # Train for the current fold
     num_epochs = 10
@@ -232,7 +220,6 @@ for current_fold, (train_idx, val_idx) in enumerate(splits):
         for images, labels in train_loader:
             images, labels = images.to(device), labels.to(device)
             
-            
             # Forward pass
             outputs = model(images)
             loss = criterion(outputs, labels)
@@ -246,9 +233,10 @@ for current_fold, (train_idx, val_idx) in enumerate(splits):
             probs = torch.sigmoid(outputs)  # Convert logits to probabilities
             preds = (probs > 0.5).int()  # Multi-label thresholding at 0.5
             
-            # per label accuracy
-            correct = (preds == labels).sum(dim=1) == labels.shape[1]  # Check all labels per sample
-            train_accuracy = correct.float().mean().item()
+            correct += (preds == labels).sum().item()  
+            total += labels.numel()  
+            #correct = (preds == labels).sum(dim=1) == labels.shape[1]  # Check all labels per sample
+            #train_accuracy = correct.float().mean().item()
 
         train_loss = running_loss / len(train_loader.dataset)
         train_accuracy = correct / total
@@ -279,12 +267,17 @@ for current_fold, (train_idx, val_idx) in enumerate(splits):
                 probs = torch.sigmoid(outputs)  # Convert to probabilities
                 preds = (probs > 0.5).int()
 
-                all_probs.extend(probs.cpu().numpy().flatten())
-                all_preds.extend(preds.cpu().numpy().flatten())
-                all_labels.extend(labels.cpu().numpy().flatten())
+                all_probs.append(probs.cpu().numpy())
+                all_labels.append(labels.cpu().numpy())
+                all_preds.append(preds.cpu().numpy())
                 
-                val_correct += (preds == labels).sum().item()
-                val_total += labels.size(0)
+                val_correct += (preds == labels).sum().item()  # Total correct predictions across all labels
+                val_total += labels.numel()  # Total number of labels (samples * num_labels)
+
+
+        all_labels = np.concatenate(all_labels)
+        all_preds = np.concatenate(all_preds)
+        all_probs = np.concatenate(all_probs)
 
         val_loss /= len(val_loader.dataset)
         val_accuracy = val_correct / val_total
@@ -305,24 +298,31 @@ for current_fold, (train_idx, val_idx) in enumerate(splits):
         current_lr = optimizer.param_groups[0]['lr']
         log_writer.add_scalar('Learning_Rate', current_lr, epoch)
         
-        num_classes = all_labels.shape[1]  # 14 in your case
-        cm_per_class = np.zeros((num_classes, 2, 2))  # 14 confusion matrices of size 2x2
+        num_classes = 14
+        cm_per_class = np.zeros((num_classes, 2, 2), dtype=int)  # 14 confusion matrices of size 2x2
 
         for class_idx in range(num_classes):
+            true_labels = all_labels[:, class_idx].astype(int)
+            pred_labels = all_preds[:, class_idx].astype(int)
+
             cm_per_class[class_idx] = confusion_matrix(
-                all_labels[:, class_idx], all_preds[:, class_idx], labels=[0, 1]
+                true_labels, pred_labels, labels=[0, 1]
             )
 
         # Save per-class confusion matrices
         cm_file_path = os.path.join(cm_output_dir, f"confusion_matrices.json")
         with open(cm_file_path, 'w') as cm_file:
-            json.dump({'confusion_matrices': cm_per_class.tolist()}, cm_file, indent=4)
+            json.dump({
+                'confusion_matrices': cm_per_class.tolist(),
+                'shape': cm_per_class.shape  # Preserve array dimensions for later use
+            }, cm_file, indent=4)
 
         print(f"Per-class confusion matrices saved at {cm_file_path}")
         
+
         for class_idx in range(num_classes):
             cm = cm_per_class[class_idx]
-            class_name = f"Class_{class_idx}"
+            class_name = class_names[class_idx]
             print(f"Logging confusion matrix for {class_name}...")
 
             # Plot confusion matrix
@@ -334,10 +334,13 @@ for current_fold, (train_idx, val_idx) in enumerate(splits):
         if (recall > best_recall):
             best_recall = recall
             torch.save(model.state_dict(), os.path.join(model_output_dir, f"pneumonia_detection_model_resnet_baseline_bestrecall_{fold}.pth"))
-            cm_file_path = os.path.join(cm_output_dir, f"confusion_matrix_best_recall_{fold}.json")
+            cm_file_path = os.path.join(cm_output_dir, f"confusion_matrices_best_recall_{fold}.json")
             with open(cm_file_path, 'w') as cm_file:
-                json.dump({'confusion_matrix': cm_per_class.tolist()}, cm_file, indent=4)
-            print(f"Confusion Matrix for Fold {fold} saved at {cm_file_path}")
+                json.dump({
+                    'confusion_matrices': cm_per_class.tolist(),
+                    'shape': cm_per_class.shape  # Preserve array dimensions for later use
+                }, cm_file, indent=4)
+            print(f"Confusion Matrices for Fold {fold} saved at {cm_file_path}")
 
         
         if (f1 > best_f1):
@@ -345,7 +348,10 @@ for current_fold, (train_idx, val_idx) in enumerate(splits):
             torch.save(model.state_dict(), os.path.join(model_output_dir, f"pneumonia_detection_model_resnet_baseline_bestf1_{fold}.pth"))
             cm_file_path = os.path.join(cm_output_dir, f"confusion_matrix_best_f1_{fold}.json")
             with open(cm_file_path, 'w') as cm_file:
-                json.dump({'confusion_matrix': cm_per_class.tolist()}, cm_file, indent=4)
+                json.dump({
+                    'confusion_matrices': cm_per_class.tolist(),
+                    'shape': cm_per_class.shape  # Preserve array dimensions for later use
+                }, cm_file, indent=4)
             print(f"Confusion Matrix for Fold {fold} saved at {cm_file_path}")
             
         save_checkpoint_path = os.path.join(model_output_dir, f"checkpoint_fold_{fold}.pth")

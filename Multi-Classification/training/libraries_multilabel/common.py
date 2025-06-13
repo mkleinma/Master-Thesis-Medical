@@ -1,3 +1,8 @@
+'''
+Credits go to the authors of B-cos-v2: Moritz Böhle, Navdeeppal Singh, Mario Fritz, Bernt Schiele. TPAMI, 2024.
+Taken from: https://github.com/B-cos/B-cos-v2
+'''
+
 from torch import nn
 
 from bcos.common import BcosUtilMixin

@@ -1,4 +1,9 @@
 """
+Credits go to the authors of B-cos-v2: Moritz Böhle, Navdeeppal Singh, Mario Fritz, Bernt Schiele. TPAMI, 2024.
+Taken from: https://github.com/B-cos/B-cos-v2
+"""
+
+"""
 This module contains utilities related to B-cos models.
 None of this is "essential" to training or doing inference with the models.
 (Most of the stuff can be done quickly and easily in a few lines of code.)

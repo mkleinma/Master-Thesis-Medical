@@ -1,5 +1,4 @@
 from antialiased_cnns.blurpool import BlurPool
-from libraries_multilabel.bcosconv2d import NormedConv2d
 from libraries_multilabel.bcosconv2d import BcosConv2d
 
 

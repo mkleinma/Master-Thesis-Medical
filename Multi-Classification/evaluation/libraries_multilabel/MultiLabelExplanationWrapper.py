@@ -7,11 +7,6 @@ import warnings
 from typing import Dict, Any
 from bcos.common import BcosUtilMixin
 
-np.random.seed(0)
-random.seed(0)
-torch.manual_seed(0)
-
-
 class MultiLabelModelWrapper(BcosUtilMixin):
     def __init__(self, pretrained_model):
         super().__init__()

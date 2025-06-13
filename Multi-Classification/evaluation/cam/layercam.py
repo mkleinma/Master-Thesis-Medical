@@ -7,6 +7,7 @@ class LayerCAM(BaseCAM):
 
     """
         ScoreCAM, inherit from BaseCAM
+        Credits go to: https://github.com/haofanwang/Score-CAM
     """
 
     def __init__(self, model_dict):

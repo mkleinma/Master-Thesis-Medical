@@ -1,5 +1,7 @@
 '''
 Implementation of Energy-based Pointing Game proposed in Score-CAM.
+Credits to: https://github.com/haofanwang/Score-CAM
+Extensions developed by: Marcel Kleinmann
 '''
 
 import torch
@@ -14,18 +16,17 @@ def energy_point_game(bbox, saliency_map):
   w, h = saliency_map.shape
   
   empty = torch.zeros((w, h))
-  empty[y1:y2, x1:x2] = 1 # changed?
+  empty[y1:y2, x1:x2] = 1 
 
-  #empty[x1:x2, y1:y2] = 1
   mask_bbox = saliency_map * empty  
   
   energy_bbox =  mask_bbox.sum()
   energy_whole = saliency_map.sum()
-  #print(f"BBox: {energy_bbox}, Whole: {energy_whole}")
   
   proportion = energy_bbox / energy_whole
   
   return proportion
+
 
 def energy_point_game_mask(mask, saliency_map, threshold=0):
     """
@@ -45,6 +46,7 @@ def energy_point_game_mask(mask, saliency_map, threshold=0):
     total_energy = saliency_map.sum()
     
     return masked_energy.item() / total_energy.item()
+  
 
 def energy_point_game_recall(bbox, saliency_map, threshold=0):
   bounding_box_map = bbox * saliency_map 
