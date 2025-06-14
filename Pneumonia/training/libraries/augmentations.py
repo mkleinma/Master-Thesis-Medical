@@ -8,9 +8,8 @@ import numpy as np
 import imgaug.augmenters as iaa
 
 '''Inspired by augmentations in 'Deep Learning for Automatic Pneumonia Detection' paper
-tried to convert the augmentations which consist of an uncommon pipeline for pytorch transformations
-due to that some implementations look weird (e.g. the continuous call of lambda's to adjust the images in the same order with different operations)
-
+converted the augmentations which consist of an uncommon pipeline for pytorch transformations
+due to that some implementations look weird (e.g. the continuous call of composes to adjust the images in the same order with different operations)
 '''
 def get_iaa_augmentations(): 
     return iaa.Sequential([
