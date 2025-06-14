@@ -1,4 +1,3 @@
-# %%
 import argparse
 import json
 import seaborn as sns
@@ -28,7 +27,7 @@ from torch.utils.data import WeightedRandomSampler
 
 from libraries_multilabel.bcosconv2d import NormedConv2d
 from libraries_multilabel.bcoslinear import BcosLinear
-from libraries_multilabel.augmentations import augmentations
+from libraries_multilabel import augmentations
 from libraries_multilabel.MultiLabelDatasets import MultiLabelDataset
 
 
@@ -100,10 +99,10 @@ if args.sampling:
     samp_text = "oversamp"
     
 # Paths
-csv_path = r"/pfs/work7/workspace/scratch/ma_mkleinma-thesis/training_splits/multilabel_dataset.csv"
-image_folder = r"/pfs/work7/workspace/scratch/ma_mkleinma-thesis/vinbigdata-chest-xray-abnormalities-detection/train_png_224"
-splits_path = r"/pfs/work7/workspace/scratch/ma_mkleinma-thesis/training_splits/vinbigdata_5fold_splits.pkl"
-model_output_dir = f"/pfs/work7/workspace/scratch/ma_mkleinma-thesis/trained_models_multilabel/30_bcos_transformer_{args.augmentation}_{samp_text}/seed_{args.seed}"
+csv_path = r"/pfs/work9/workspace/scratch/ma_mkleinma-thesis/training_splits/multilabel_dataset.csv"
+image_folder = r"/pfs/work9/workspace/scratch/ma_mkleinma-thesis/vinbigdata-chest-xray-abnormalities-detection/train_png_224"
+splits_path = r"/pfs/work9/workspace/scratch/ma_mkleinma-thesis/training_splits/vinbigdata_5fold_splits.pkl"
+model_output_dir = f"/pfs/work9/workspace/scratch/ma_mkleinma-thesis/trained_models_multilabel/30_bcos_transformer_{args.augmentation}_{samp_text}/seed_{args.seed}"
 cm_output_dir = os.path.join(model_output_dir, "confusion_matrix")
 
 
@@ -118,13 +117,13 @@ with open(splits_path, 'rb') as f:
 
 # Define transformations for the datasets --- resize for baselines as model.transform else resizes
 if args.augmentation == "no":
-    transform = augmentations.get_no_augmentations_resize()
+    transform = augmentations.get_no_augmentations_no_resize()
 elif args.augmentation == "light":
-    transform = augmentations.get_light_augmentations_resize()
+    transform = augmentations.get_light_augmentations_no_resize()
 elif args.augmentation == "heavy":
     transform = augmentations.get_heavy_augmentations_no_rotation_resize()
 
-transform_val = augmentations.get_no_augmentations_resize()
+transform_val = augmentations.get_no_augmentations_no_resize()
 
 class_names = [
     "Aortic Enlargement", "Atelectasis", "Calcification", "Cardiomegaly",
@@ -183,26 +182,19 @@ for current_fold, (train_idx, val_idx) in enumerate(splits):
     
     
     if args.sampling:
-        label_counts = train_data.iloc[:, 1:].sum(axis=0).values  
-        class_weights = 1. / (label_counts + 1e-6)
+        label_counts = train_data.iloc[:, 1:].sum(axis=0).values # how many of each label
+        class_weights = 1. / (label_counts + 1e-6) # smoothing factor 0.1
         class_weights = np.clip(class_weights, a_min=1/3, a_max=3.0)
-        
-        # Calculate sample weights
-        sample_weights = train_data.iloc[:, 1:].dot(class_weights).to_numpy()
-        
-        # Convert to tensor and normalize
-        sample_weights = torch.as_tensor(sample_weights, dtype=torch.float32)
-        sample_weights = (sample_weights - sample_weights.min()) / (sample_weights.max() - sample_weights.min() + 1e-6)
-        
-        # Create sampler with critical parameters
+        sample_weights = train_data.iloc[:, 1:].dot(class_weights)
+        sample_weights /= sample_weights.max()
         sampler = WeightedRandomSampler(
-            weights=sample_weights,
+            weights=sample_weights.to_numpy(),
             num_samples=len(sample_weights),
             replacement=True,
             generator=torch.Generator().manual_seed(args.seed)
         )
 
-        train_loader = DataLoader(train_dataset, batch_size=32, sampler=sampler)
+        train_loader = DataLoader(train_dataset, batch_size=16, sampler=sampler)
     else:
         train_loader = DataLoader(train_dataset, batch_size=16, shuffle=True)  
     val_loader = DataLoader(val_dataset, batch_size=16, shuffle=False)
@@ -392,11 +384,3 @@ for current_fold, (train_idx, val_idx) in enumerate(splits):
     model_path = f"pneumonia_detection_model_fold_{fold}_transformer_bcos.pth"
     torch.save(model.state_dict(), os.path.join(model_output_dir, model_path))
     log_writer.close()
-
-
-
-
-# %%
-
-
-

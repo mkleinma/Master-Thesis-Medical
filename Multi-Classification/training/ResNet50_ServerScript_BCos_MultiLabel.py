@@ -1,4 +1,3 @@
-# %%
 import argparse
 import json
 import seaborn as sns
@@ -30,6 +29,7 @@ from libraries_multilabel.bcosconv2d import NormedConv2d
 from libraries_multilabel.augmentations import augmentations
 from libraries_multilabel.MultiLabelDatasets import MultiLabelDataset
 
+
 parser = argparse.ArgumentParser()
 parser.add_argument("--seed", type=int, required=True, help="Random seed for training")
 parser.add_argument("--augmentation", type=str, choices=["no", "light", "heavy"], required=True, help="Augmentation Type")
@@ -38,7 +38,7 @@ parser.add_argument("--sampling", type=lambda x: x.lower() == "true", default=Fa
 
 args = parser.parse_args()
 
-## assisting script
+## assisting scripts
 def plot_confusion_matrix(cm, class_names):
     fig, ax = plt.subplots(figsize=(8, 8))
     sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', xticklabels=class_names, yticklabels=class_names)
@@ -98,23 +98,21 @@ if args.sampling:
     samp_text = "oversamp"
     
 # Paths
-csv_path = r"/pfs/work7/workspace/scratch/ma_mkleinma-thesis/training_splits/multilabel_dataset.csv"
-image_folder = r"/pfs/work7/workspace/scratch/ma_mkleinma-thesis/vinbigdata-chest-xray-abnormalities-detection/train_png_224"
-splits_path = r"/pfs/work7/workspace/scratch/ma_mkleinma-thesis/training_splits/vinbigdata_5fold_splits.pkl"
-model_output_dir = f"/pfs/work7/workspace/scratch/ma_mkleinma-thesis/trained_models_multilabel/30_base_resnet50_{args.augmentation}_{samp_text}/seed_{args.seed}"
+csv_path = r"/pfs/work9/workspace/scratch/ma_mkleinma-thesis/training_splits/multilabel_dataset.csv"
+image_folder = r"/pfs/work9/workspace/scratch/ma_mkleinma-thesis/vinbigdata-chest-xray-abnormalities-detection/train_png_224"
+splits_path = r"/pfs/work9/workspace/scratch/ma_mkleinma-thesis/training_splits/vinbigdata_5fold_splits.pkl"
+model_output_dir = f"/pfs/work9/workspace/scratch/ma_mkleinma-thesis/trained_models_multilabel/30_bcos_resnet50_{args.augmentation}_{samp_text}/seed_{args.seed}"
 cm_output_dir = os.path.join(model_output_dir, "confusion_matrix")
 
 
-# to make sure there is no issue when paths dont exist
 os.makedirs(model_output_dir, exist_ok=True)
 os.makedirs(cm_output_dir, exist_ok=True)
 
-# Load data and splits
 data = pd.read_csv(csv_path)
 with open(splits_path, 'rb') as f:
     splits = pickle.load(f)
 
-# Define transformations for the datasets --- resize for baselines as model.transform else resizes
+
 if args.augmentation == "no":
     transform = augmentations.get_no_augmentations_resize()
 elif args.augmentation == "light":
@@ -181,35 +179,19 @@ for current_fold, (train_idx, val_idx) in enumerate(splits):
     
     
     if args.sampling:
-        label_counts = train_data.iloc[:, 1:].sum(axis=0).values  
-        class_weights = 1. / (label_counts + 1e-6)
+        label_counts = train_data.iloc[:, 1:].sum(axis=0).values # how many of each label
+        class_weights = 1. / (label_counts + 1e-6) # smoothing factor 0.1
         class_weights = np.clip(class_weights, a_min=1/3, a_max=3.0)
-        
-        # Calculate sample weights
-        sample_weights = train_data.iloc[:, 1:].dot(class_weights).to_numpy()
-        
-        # Convert to tensor and normalize
-        sample_weights = torch.as_tensor(sample_weights, dtype=torch.float32)
-        sample_weights = (sample_weights - sample_weights.min()) / (sample_weights.max() - sample_weights.min() + 1e-6)
-        
-        # Create sampler with critical parameters
+        sample_weights = train_data.iloc[:, 1:].dot(class_weights)
+        sample_weights /= sample_weights.max()
         sampler = WeightedRandomSampler(
-            weights=sample_weights,
+            weights=sample_weights.to_numpy(),
             num_samples=len(sample_weights),
             replacement=True,
             generator=torch.Generator().manual_seed(args.seed)
         )
 
-        train_loader = DataLoader(train_dataset, batch_size=32, sampler=sampler)
-
-        #label_counts = train_data.iloc[:, 1:].sum(axis=0).values # how many of each label
-        #class_weights = 1. / (label_counts + 0.1) # smoothing factor 0.1
-        #class_weights = np.clip(class_weights, a_min = 0.01, a_max = 10.0)
-        #sample_weights = train_data.iloc[:, 1:].dot(class_weights)
-        #sample_weights /= sample_weights.max()
-        #sampler = WeightedRandomSampler(sample_weights, len(sample_weights))
-
-        #train_loader = DataLoader(train_dataset, batch_size=16, sampler=sampler)
+        train_loader = DataLoader(train_dataset, batch_size=16, sampler=sampler)
     else:
         train_loader = DataLoader(train_dataset, batch_size=16, shuffle=True)  
     val_loader = DataLoader(val_dataset, batch_size=16, shuffle=False)
@@ -233,7 +215,6 @@ for current_fold, (train_idx, val_idx) in enumerate(splits):
         for images, labels in train_loader:
             labels = labels.to(device)
             six_channel_images = []
-            # create model.transform images
             for img_tensor in images:
                 numpy_image = (img_tensor.permute(1, 2, 0).cpu().numpy() * 255).astype(np.uint8)
                 pil_image = Image.fromarray(numpy_image)
@@ -243,11 +224,9 @@ for current_fold, (train_idx, val_idx) in enumerate(splits):
             six_channel_images = torch.stack(six_channel_images).to(device)
 
             
-            # Forward pass
             outputs = model(six_channel_images)
             loss = criterion(outputs, labels)
 
-            # Backward pass and optimization
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
@@ -257,8 +236,8 @@ for current_fold, (train_idx, val_idx) in enumerate(splits):
             preds = (probs > 0.5).int()  # Multi-label thresholding at 0.5
             
             # per label accuracy
-            correct += (preds == labels).sum().item()  # Count correct predictions across all labels
-            total += labels.numel()  # Total number of labels
+            correct += (preds == labels).sum().item()  
+            total += labels.numel()
 
         train_loss = running_loss / len(train_loader.dataset)
         train_accuracy = correct / total
@@ -333,7 +312,7 @@ for current_fold, (train_idx, val_idx) in enumerate(splits):
         log_writer.add_scalar('Learning_Rate', current_lr, epoch)
         
         num_classes = 14 
-        cm_per_class = np.zeros((num_classes, 2, 2), dtype=int)  # 14 confusion matrices of size 2x2
+        cm_per_class = np.zeros((num_classes, 2, 2), dtype=int)
 
         for class_idx in range(num_classes):
             true_labels = all_labels[:, class_idx].astype(int)
@@ -370,7 +349,7 @@ for current_fold, (train_idx, val_idx) in enumerate(splits):
             with open(cm_file_path, 'w') as cm_file:
                 json.dump({
                     'confusion_matrices': cm_per_class.tolist(),
-                    'shape': cm_per_class.shape  # Preserve array dimensions for later use
+                    'shape': cm_per_class.shape
                 }, cm_file, indent=4)
             print(f"Confusion Matrix for Fold {fold} saved at {cm_file_path}")
 
@@ -382,7 +361,7 @@ for current_fold, (train_idx, val_idx) in enumerate(splits):
             with open(cm_file_path, 'w') as cm_file:
                 json.dump({
                     'confusion_matrices': cm_per_class.tolist(),
-                    'shape': cm_per_class.shape  # Preserve array dimensions for later use
+                    'shape': cm_per_class.shape
                 }, cm_file, indent=4)            
             print(f"Confusion Matrix for Fold {fold} saved at {cm_file_path}")
             
@@ -395,15 +374,8 @@ for current_fold, (train_idx, val_idx) in enumerate(splits):
 
     print(f"Finished training fold {fold}.\n")
     
-    # Save the final model
     model_path = f"pneumonia_detection_model_fold_{fold}_resnet_bcos.pth"
     torch.save(model.state_dict(), os.path.join(model_output_dir, model_path))
     log_writer.close()
-
-
-
-
-# %%
-
 
 
